@@ -65,3 +65,10 @@ fun esperaTxt(min: Int): String = when {
 }
 
 fun passageirosTxt(n: Int) = if (n == 1) "1 passageiro" else "$n passageiros"
+
+/** 0 -> "no horário previsto", -30 -> "30min antes do previsto", 100 -> "1h40 depois do previsto". */
+fun atrasoTxt(min: Int): String = when {
+    min == 0 -> "no horário previsto"
+    min < 0 -> "${esperaTxt(-min)} antes do previsto"
+    else -> "${esperaTxt(min)} depois do previsto"
+}

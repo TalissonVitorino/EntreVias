@@ -2,6 +2,7 @@ package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.BaseFicticia
 import br.com.talisson.entrevias.domain.ParametrosConexao
+import br.com.talisson.entrevias.domain.ParametrosPlanoB
 import br.com.talisson.entrevias.domain.Terminal
 import br.com.talisson.entrevias.domain.Viagem
 import java.sql.Connection
@@ -16,7 +17,7 @@ object Banco {
     private val INICIO: Long = ZonedDateTime.of(2026, 11, 20, 0, 0, 0, 0, ZONA).toEpochSecond()
     private val COTACAO: Long = ZonedDateTime.of(2026, 10, 1, 10, 0, 0, 0, ZONA).toEpochSecond()
     private const val DIAS_DE_OFERTA = 150
-    private const val VERSAO_DADOS = 2   // sobe quando a regra de preços muda: o banco é refeito
+    private const val VERSAO_DADOS = 3   // sobe quando a regra de preços ou os parâmetros mudam: o banco é refeito
 
     /** Preço fictício do dia: fim de semana, festas e uma variação própria de cada saída. */
     private fun precoDoDia(base: Int, data: LocalDate, saidaMin: Int, chave: Int): Int {
@@ -96,6 +97,9 @@ object Banco {
         c.prepareStatement("insert into parametro (chave, valor) values (?,?)").use { st ->
             listOf("conexao_minima_min" to 30, "conexao_apertada_min" to 60, "conexao_maxima_min" to 480, "versao_dados" to VERSAO_DADOS).forEach { (k, v) -> st.setString(1, k); st.setInt(2, v); st.executeUpdate() }
         }
+        c.prepareStatement("insert into parametro (chave, valor) values (?,?)").use { st ->
+            ParametrosPlanoB().paraMapa().forEach { (k, v) -> st.setString(1, k); st.setInt(2, v); st.executeUpdate() }
+        }
         c.commit(); c.autoCommit = true
     }
 
@@ -138,5 +142,11 @@ object Banco {
                 }
             }
         }
+    }
+
+    /** RN15: as regras do plano B (PLANO.md, seção 3.3.2). Chave que falta na tabela usa o valor inicial. */
+    fun parametrosPlanoB(): ParametrosPlanoB = conexao().use { c ->
+        val m = c.createStatement().use { s -> s.executeQuery("select chave, valor from parametro").use { rs -> buildMap { while (rs.next()) put(rs.getString(1), rs.getInt(2)) } } }
+        ParametrosPlanoB.deMapa(m)
     }
 }
