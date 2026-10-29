@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.talisson.entrevias.domain.LimiteRoteiros
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.Rota
 import br.com.talisson.entrevias.domain.TipoPlanoB
@@ -368,6 +369,7 @@ fun TelaRota(e: Estado) {
             T(centavosParaReais(total), 30, FontWeight.Bold, ls = -1f)
             if (e.salvoAgora) T("✓ Salvo neste aparelho", 15, FontWeight.SemiBold, c.ok)
             else Botao("Salvar planejamento", { e.salvar(r) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+            if (e.limiteAtingido) T(LimiteRoteiros.MENSAGEM_CHEIO, 14, FontWeight.SemiBold, c.erro)
             Botao("Simular esta viagem", { e.simular(r) }, Modifier.fillMaxWidth())
             Botao("Ver planejamentos", { e.ir(Tela.PLANEJAMENTOS) }, Modifier.fillMaxWidth())
         }

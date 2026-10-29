@@ -5,6 +5,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import br.com.talisson.entrevias.domain.AtrasoFicticio
+import br.com.talisson.entrevias.domain.LimiteRoteiros
 import br.com.talisson.entrevias.domain.MotorDeRotas
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.ParametrosConexao
@@ -15,6 +16,7 @@ import br.com.talisson.entrevias.domain.PlanoBConexao
 import br.com.talisson.entrevias.domain.RiscoConexao
 import br.com.talisson.entrevias.domain.RiscoRota
 import br.com.talisson.entrevias.domain.Rota
+import br.com.talisson.entrevias.domain.Salvamento
 import br.com.talisson.entrevias.domain.Terminal
 import br.com.talisson.entrevias.domain.Viagem
 import kotlinx.coroutines.CancellationException
@@ -64,6 +66,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
 
     var rotaAtual by mutableStateOf<Rota?>(null)
     var salvoAgora by mutableStateOf(false)
+    var limiteAtingido by mutableStateOf(false)
     var concluidos by mutableStateOf(0)
     val selecionadas = mutableStateListOf<String>()
     val planos = mutableStateListOf<Plano>()
@@ -125,7 +128,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
         return ('A' + i % 26).toString().repeat(i / 26 + 1)
     }
 
-    fun ir(t: Tela) { tela = t; salvoAgora = false }
+    fun ir(t: Tela) { tela = t; salvoAgora = false; limiteAtingido = false }
     fun abrirRota(r: Rota, de: Tela = Tela.RESULTADOS) { rotaAtual = r; voltarPara = de; ir(Tela.ROTA) }
     fun abrirPlano(p: Plano) { rData = p.data; rPax = p.pax; garantirBase(p.data); abrirRota(p.rota, Tela.PLANEJAMENTOS) }
 
@@ -152,8 +155,12 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
 
     fun inverter() { val o = origem; origem = destino; destino = o }
     fun alternarSelecao(id: String) { if (id in selecionadas) selecionadas.remove(id) else if (selecionadas.size < 3) selecionadas.add(id) }
+    /** RF34: guarda no aparelho até o limite; ao chegar nele não apaga nada, só avisa (`limiteAtingido`). */
     fun salvar(r: Rota) {
-        if (planos.none { it.rota.id == r.id && it.data == rData && it.pax == rPax }) planos.add(Plano(r, rData, rPax))
-        salvoAgora = true
+        when (val s = LimiteRoteiros.salvar(planos.toList(), Plano(r, rData, rPax))) {
+            is Salvamento.Salvo -> { planos.clear(); planos.addAll(s.lista); salvoAgora = true }
+            Salvamento.Repetido -> salvoAgora = true
+            Salvamento.Cheio -> limiteAtingido = true
+        }
     }
 }
