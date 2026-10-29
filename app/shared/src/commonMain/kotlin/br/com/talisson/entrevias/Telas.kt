@@ -229,6 +229,17 @@ private fun CartaoOpcao(e: Estado, r: Rota) {
                 T(dataViagem(e.rData, r.chegadaMin), 13, cor = c.muted)
             }
         }
+        val risco = e.risco(r)
+        risco.pior?.let { pior ->
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SeloRisco(pior.rotulo, pior.nota)
+                    T("Risco da conexão", 13, cor = c.muted)
+                }
+                T(pior.frase, 13, cor = c.muted)
+                if (risco.simulado) T("Atraso típico simulado (dados de demonstração).", 12, cor = c.muted)
+            }
+        }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
             T("Total conhecido · ${passageirosTxt(e.rPax)}", 13, cor = c.muted, mod = Modifier.weight(1f))
             Column(horizontalAlignment = Alignment.End) {
@@ -266,6 +277,7 @@ fun TelaRota(e: Estado) {
     val r = e.rotaAtual
     if (r == null) { CaixaVazia("Nenhuma rota aberta", "Busque uma viagem para ver os detalhes.", "Buscar opções") { e.ir(Tela.BUSCAR) }; return }
     val total = r.totalCentavos * e.rPax
+    val risco = e.risco(r)
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
         Link(if (e.voltarPara == Tela.PLANEJAMENTOS) "← Voltar aos planejamentos" else "← Voltar aos resultados") { e.ir(e.voltarPara) }
         Column {
@@ -276,6 +288,13 @@ fun TelaRota(e: Estado) {
             T("${e.rData.br()} · ${passageirosTxt(e.rPax)}", 15, cor = c.muted)
             Spacer(Modifier.height(10.dp))
             T("Ida: ${duracao(r.duracaoMin)}, incluindo esperas", 15, FontWeight.SemiBold)
+            risco.pior?.let { pior ->
+                Spacer(Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    SeloRisco(pior.rotulo, pior.nota)
+                    T("Risco da rota (pior conexão)", 13, cor = c.muted)
+                }
+            }
         }
         T("Trecho por trecho", 22, FontWeight.Bold, ls = -0.4f)
         r.viagens.forEachIndexed { i, v ->
@@ -306,6 +325,14 @@ fun TelaRota(e: Estado) {
                     T(e.terminal(v.destino), 14)
                     if (w < r.params.apertadaMin) T("Conexão apertada: abaixo de ${r.params.apertadaMin} min.", 14, cor = c.erro)
                     T("Chegada e próxima saída no mesmo terminal. Tempo de conexão ilustrativo, não validado com a empresa.", 14, cor = c.muted)
+                    val cx = risco.conexoes[i]
+                    Spacer(Modifier.height(8.dp))
+                    SeloRisco(cx.rotulo, cx.nota)
+                    Spacer(Modifier.height(4.dp))
+                    T(cx.frase, 14, FontWeight.SemiBold)
+                    cx.fatos.forEach { T("• $it", 14) }
+                    T("A nota estima o risco; não é proteção: cada passagem é separada.", 13, cor = c.muted)
+                    if (risco.simulado) T("Atraso típico simulado (dados de demonstração).", 13, cor = c.muted)
                 }
             }
         }
