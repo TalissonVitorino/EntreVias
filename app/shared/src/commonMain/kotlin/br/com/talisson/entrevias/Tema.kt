@@ -18,17 +18,21 @@ class Cores(
     val bg: Color, val surface: Color, val fg: Color, val muted: Color, val line: Color,
     val primary: Color, val onPrimary: Color, val soft: Color, val field: Color,
     val noteBg: Color, val ok: Color, val erro: Color,
+    /** Âmbar do selo de risco "Atenção" (contraste de texto sobre a superfície, claro e escuro). */
+    val atencao: Color,
 )
 
 val Claro = Cores(
     bg = Color(0xFFF2F2F7), surface = Color(0xFFFFFFFF), fg = Color(0xFF1D1D1F), muted = Color(0xFF86868B),
     line = Color(0xFFE5E5EA), primary = Color(0xFF0071E3), onPrimary = Color(0xFFFFFFFF), soft = Color(0xFFE5F1FF),
     field = Color(0xFFF2F2F7), noteBg = Color(0xFFF2F2F7), ok = Color(0xFF248A3D), erro = Color(0xFFD70015),
+    atencao = Color(0xFFA85A00),
 )
 val Escuro = Cores(
     bg = Color(0xFF000000), surface = Color(0xFF1C1C1E), fg = Color(0xFFF5F5F7), muted = Color(0xFF98989D),
     line = Color(0xFF38383A), primary = Color(0xFF0A84FF), onPrimary = Color(0xFFFFFFFF), soft = Color(0xFF0A2A4D),
     field = Color(0xFF2C2C2E), noteBg = Color(0xFF1C1C1E), ok = Color(0xFF30D158), erro = Color(0xFFFF453A),
+    atencao = Color(0xFFFF9F0A),
 )
 
 val LocalCores = staticCompositionLocalOf { Claro }

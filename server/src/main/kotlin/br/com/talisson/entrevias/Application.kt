@@ -31,6 +31,7 @@ fun Application.module() {
         get("/api/saude") { call.respondText("ok") }
         get("/api/cidades") { call.respond(Banco.terminais()) }
         get("/api/parametros") { call.respond(Banco.parametros()) }
+        get("/api/parametros/risco") { call.respond(Banco.parametrosRisco()) }
         get("/api/viagens") {
             val data = call.request.queryParameters["data"]?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
             if (data == null) { call.respond(HttpStatusCode.BadRequest, "Informe data=AAAA-MM-DD"); return@get }

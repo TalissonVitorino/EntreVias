@@ -3,6 +3,7 @@ package br.com.talisson.entrevias
 import br.com.talisson.entrevias.domain.BaseFicticia
 import br.com.talisson.entrevias.domain.ParametrosConexao
 import br.com.talisson.entrevias.domain.ParametrosPlanoB
+import br.com.talisson.entrevias.domain.ParametrosRisco
 import br.com.talisson.entrevias.domain.Terminal
 import br.com.talisson.entrevias.domain.Viagem
 import java.sql.Connection
@@ -95,7 +96,8 @@ object Banco {
             }
         }
         c.prepareStatement("insert into parametro (chave, valor) values (?,?)").use { st ->
-            listOf("conexao_minima_min" to 30, "conexao_apertada_min" to 60, "conexao_maxima_min" to 480, "versao_dados" to VERSAO_DADOS).forEach { (k, v) -> st.setString(1, k); st.setInt(2, v); st.executeUpdate() }
+            val conexao = mapOf("conexao_minima_min" to 30, "conexao_apertada_min" to 60, "conexao_maxima_min" to 480)
+            (conexao + ParametrosRisco().paraMapa() + ("versao_dados" to VERSAO_DADOS)).forEach { (k, v) -> st.setString(1, k); st.setInt(2, v); st.executeUpdate() }
         }
         c.prepareStatement("insert into parametro (chave, valor) values (?,?)").use { st ->
             ParametrosPlanoB().paraMapa().forEach { (k, v) -> st.setString(1, k); st.setInt(2, v); st.executeUpdate() }
@@ -111,10 +113,17 @@ object Banco {
         }
     }
 
-    fun parametros(): ParametrosConexao = conexao().use { c ->
-        val m = c.createStatement().use { s -> s.executeQuery("select chave, valor from parametro").use { rs -> buildMap { while (rs.next()) put(rs.getString(1), rs.getInt(2)) } } }
-        ParametrosConexao(m["conexao_minima_min"] ?: 30, m["conexao_apertada_min"] ?: 60, m["conexao_maxima_min"] ?: 480)
+    private fun todosOsParametros(): Map<String, Int> = conexao().use { c ->
+        c.createStatement().use { s -> s.executeQuery("select chave, valor from parametro").use { rs -> buildMap { while (rs.next()) put(rs.getString(1), rs.getInt(2)) } } }
     }
+
+    fun parametros(): ParametrosConexao {
+        val m = todosOsParametros()
+        return ParametrosConexao(m["conexao_minima_min"] ?: 30, m["conexao_apertada_min"] ?: 60, m["conexao_maxima_min"] ?: 480)
+    }
+
+    /** RN13: a fórmula do risco da conexão (PLANO.md, seção 3.3.1). Chave que falta na tabela usa o valor inicial. */
+    fun parametrosRisco(): ParametrosRisco = ParametrosRisco.deMapa(todosOsParametros())
 
     private fun comodidades(cat: String) = when (cat) { "Convencional" -> listOf("Ar-condicionado"); "Executivo" -> listOf("Ar-condicionado", "Banheiro"); else -> listOf("Ar-condicionado", "Banheiro", "Tomada USB") }
 

@@ -2,6 +2,7 @@ package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.ParametrosConexao
 import br.com.talisson.entrevias.domain.ParametrosPlanoB
+import br.com.talisson.entrevias.domain.ParametrosRisco
 import br.com.talisson.entrevias.domain.Terminal
 import br.com.talisson.entrevias.domain.Viagem
 import io.ktor.client.HttpClient
@@ -20,6 +21,7 @@ class Api(private val base: String = urlBase()) {
 
     suspend fun terminais(): List<Terminal> = http.get("$base/api/cidades").body()
     suspend fun parametros(): ParametrosConexao = http.get("$base/api/parametros").body()
+    suspend fun parametrosRisco(): ParametrosRisco = http.get("$base/api/parametros/risco").body()
     suspend fun viagens(data: Data, dias: Int = 3): List<Viagem> =
         http.get("$base/api/viagens") { parameter("data", data.iso()); parameter("dias", dias) }.body()
     suspend fun parametrosPlanoB(): ParametrosPlanoB = http.get("$base/api/parametros/planob").body()
