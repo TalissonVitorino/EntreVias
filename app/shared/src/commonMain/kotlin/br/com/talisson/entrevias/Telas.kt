@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.Rota
+import br.com.talisson.entrevias.domain.RotuloRisco
 import br.com.talisson.entrevias.domain.TipoPlanoB
 
 private fun Rota.stops() = when (baldeacoes) { 0 -> "Direto"; 1 -> "1 baldeação"; else -> "$baldeacoes baldeações" }
@@ -335,7 +336,7 @@ fun TelaRota(e: Estado) {
                     T("A nota estima o risco; não é proteção: cada passagem é separada.", 13, cor = c.muted)
                     if (risco.simulado) T("Atraso típico simulado (dados de demonstração).", 13, cor = c.muted)
                     Spacer(Modifier.height(8.dp))
-                    PlanoBUi(e, r, i)
+                    PlanoBUi(e, r, i, abertoPorPadrao = cx.rotulo == RotuloRisco.ARRISCADO)
                 }
             }
         }
@@ -376,8 +377,7 @@ fun TelaRota(e: Estado) {
 
 /**
  * RF20 / RN15: o que fazer se esta conexão for perdida. Sempre uma alternativa, nunca uma proteção (RN07).
- * [abertoPorPadrao]: o plano manda abrir já aberto quando a conexão é Arriscada (RF19); até as duas telas
- * andarem juntas ele chega falso.
+ * [abertoPorPadrao]: já aberto quando a conexão é Arriscada (RF19); nas demais o plano B começa recolhido.
  */
 @Composable
 private fun PlanoBUi(e: Estado, r: Rota, conexao: Int, abertoPorPadrao: Boolean = false) {
