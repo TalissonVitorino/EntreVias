@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import br.com.talisson.entrevias.domain.RotuloRisco
 
 @Composable
 fun Eyebrow(t: String) = T(t, 14, FontWeight.SemiBold, cores().primary)
@@ -96,6 +97,25 @@ fun Etiqueta(txt: String, simples: Boolean = false) {
     if (simples) T(txt, 13, FontWeight.Medium, c.muted)
     else Box(Modifier.clip(RoundedCornerShape(10.dp)).background(c.field).padding(horizontal = 11.dp, vertical = 5.dp)) {
         T(txt, 13, FontWeight.SemiBold)
+    }
+}
+
+/** RN13: selo do risco da conexão. A cor nunca vai sozinha: sempre com símbolo e texto (RNF04). */
+@Composable
+fun SeloRisco(rotulo: RotuloRisco, nota: Int) {
+    val c = cores()
+    val (cor, simbolo) = when (rotulo) {
+        RotuloRisco.SEGURO -> c.ok to "✓"
+        RotuloRisco.ATENCAO -> c.atencao to "▲"
+        RotuloRisco.ARRISCADO -> c.erro to "✕"
+    }
+    val forma = RoundedCornerShape(10.dp)
+    Row(
+        Modifier.clip(forma).border(1.dp, cor, forma).padding(horizontal = 10.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        T(simbolo, 13, FontWeight.Bold, cor)
+        T("${rotulo.texto} · $nota", 13, FontWeight.SemiBold, cor)
     }
 }
 

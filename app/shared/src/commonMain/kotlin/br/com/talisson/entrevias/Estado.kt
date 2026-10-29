@@ -4,11 +4,16 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.MotorDeRotas
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.ParametrosConexao
+import br.com.talisson.entrevias.domain.ParametrosRisco
+import br.com.talisson.entrevias.domain.RiscoConexao
+import br.com.talisson.entrevias.domain.RiscoRota
 import br.com.talisson.entrevias.domain.Rota
 import br.com.talisson.entrevias.domain.Terminal
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -31,6 +36,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
     var carga by mutableStateOf<Carga>(Carga.Carregando)
     var terminais by mutableStateOf<List<Terminal>>(emptyList())
     var params by mutableStateOf(ParametrosConexao())
+    var paramsRisco by mutableStateOf(ParametrosRisco())
 
     var tela by mutableStateOf(Tela.BUSCAR)
     var voltarPara by mutableStateOf(Tela.RESULTADOS)
@@ -64,6 +70,8 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
             carga = try {
                 terminais = api.terminais().sortedBy { it.cidade }
                 params = api.parametros()
+                // servidor sem o endpoint de risco (versão antiga): vale a fórmula inicial do plano
+                paramsRisco = try { api.parametrosRisco() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosRisco() }
                 Carga.Pronto
             } catch (t: Throwable) {
                 Carga.Erro("Não foi possível falar com o servidor (${urlBase()}).")
@@ -73,6 +81,9 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
 
     fun cidade(id: String) = terminais.firstOrNull { it.id == id }?.cidade ?: id
     fun terminal(id: String) = terminais.firstOrNull { it.id == id }?.nome ?: id
+
+    /** RF19: nota de risco da rota e de cada conexão (atraso típico fictício, rotulado "simulado"). */
+    fun risco(r: Rota): RiscoRota = RiscoConexao.avaliar(r, paramsRisco, AtrasoFicticio) { cidade(it) }
 
     val podeBuscar get() = origem != null && destino != null && origem != destino
 
