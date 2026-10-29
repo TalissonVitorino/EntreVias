@@ -8,11 +8,15 @@ import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.MotorDeRotas
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.ParametrosConexao
+import br.com.talisson.entrevias.domain.ParametrosPlanoB
 import br.com.talisson.entrevias.domain.ParametrosRisco
+import br.com.talisson.entrevias.domain.PlanoB
+import br.com.talisson.entrevias.domain.PlanoBConexao
 import br.com.talisson.entrevias.domain.RiscoConexao
 import br.com.talisson.entrevias.domain.RiscoRota
 import br.com.talisson.entrevias.domain.Rota
 import br.com.talisson.entrevias.domain.Terminal
+import br.com.talisson.entrevias.domain.Viagem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -64,6 +68,12 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
     val selecionadas = mutableStateListOf<String>()
     val planos = mutableStateListOf<Plano>()
 
+    // plano B (RF20): as regras do servidor e as viagens do dia da rota aberta
+    var paramsPlanoB by mutableStateOf(ParametrosPlanoB())
+    var base by mutableStateOf<List<Viagem>?>(null)
+    var baseCarga by mutableStateOf<Carga>(Carga.Pronto)
+    private var baseData: Data? = null   // dia a que `base` pertence (ou que está sendo carregado)
+
     fun iniciar() {
         escopo.launch {
             carga = Carga.Carregando
@@ -72,6 +82,8 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
                 params = api.parametros()
                 // servidor sem o endpoint de risco (versão antiga): vale a fórmula inicial do plano
                 paramsRisco = try { api.parametrosRisco() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosRisco() }
+                // servidor sem o endpoint do plano B (versão antiga): valem as regras iniciais do plano
+                paramsPlanoB = try { api.parametrosPlanoB() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosPlanoB() }
                 Carga.Pronto
             } catch (t: Throwable) {
                 Carga.Erro("Não foi possível falar com o servidor (${urlBase()}).")
@@ -97,6 +109,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
                 val v = api.viagens(data, 3)
                 val rotas = MotorDeRotas.buscar(o, d, v, params, limite = 200, partida = 0 until 1440)
                 todas = rotas; rOrigem = o; rDestino = d; rData = data; rPax = pax
+                base = v; baseData = data; baseCarga = Carga.Pronto
                 selecionadas.clear()
                 ir(Tela.RESULTADOS)
             } catch (t: Throwable) {
@@ -114,7 +127,27 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
 
     fun ir(t: Tela) { tela = t; salvoAgora = false }
     fun abrirRota(r: Rota, de: Tela = Tela.RESULTADOS) { rotaAtual = r; voltarPara = de; ir(Tela.ROTA) }
-    fun abrirPlano(p: Plano) { rData = p.data; rPax = p.pax; abrirRota(p.rota, Tela.PLANEJAMENTOS) }
+    fun abrirPlano(p: Plano) { rData = p.data; rPax = p.pax; garantirBase(p.data); abrirRota(p.rota, Tela.PLANEJAMENTOS) }
+
+    /** O plano B precisa das viagens do dia da rota; ao abrir um planejamento salvo de outro dia, busca de novo. */
+    fun garantirBase(d: Data) {
+        if (baseData == d && baseCarga !is Carga.Erro) return
+        base = null; baseData = d; baseCarga = Carga.Carregando
+        escopo.launch {
+            try {
+                val v = api.viagens(d, 3)
+                if (baseData == d) { base = v; baseCarga = Carga.Pronto }   // uma busca nova no meio do caminho vence
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (baseData == d) baseCarga = Carga.Erro("Não foi possível carregar as viagens do dia.")
+            }
+        }
+    }
+
+    /** RF20: o que fazer se a conexão [conexao] da rota for perdida; `null` enquanto as viagens do dia não chegaram. */
+    fun planoB(r: Rota, conexao: Int): PlanoB? =
+        base?.let { PlanoBConexao.avaliar(r, conexao, it, paramsPlanoB, params) { id -> cidade(id) } }
     fun simular(r: Rota) { rotaAtual = r; concluidos = 0; ir(Tela.SIMULACAO) }
 
     fun inverter() { val o = origem; origem = destino; destino = o }

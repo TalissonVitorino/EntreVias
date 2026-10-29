@@ -37,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.Rota
+import br.com.talisson.entrevias.domain.TipoPlanoB
 
 private fun Rota.stops() = when (baldeacoes) { 0 -> "Direto"; 1 -> "1 baldeação"; else -> "$baldeacoes baldeações" }
 private fun Rota.categoria() = viagens.map { it.categoria }.distinct().let { if (it.size == 1) it.first() else "Categorias mistas" }
@@ -333,6 +334,8 @@ fun TelaRota(e: Estado) {
                     cx.fatos.forEach { T("• $it", 14) }
                     T("A nota estima o risco; não é proteção: cada passagem é separada.", 13, cor = c.muted)
                     if (risco.simulado) T("Atraso típico simulado (dados de demonstração).", 13, cor = c.muted)
+                    Spacer(Modifier.height(8.dp))
+                    PlanoBUi(e, r, i)
                 }
             }
         }
@@ -367,6 +370,68 @@ fun TelaRota(e: Estado) {
             else Botao("Salvar planejamento", { e.salvar(r) }, Modifier.fillMaxWidth(), primario = true, grande = true)
             Botao("Simular esta viagem", { e.simular(r) }, Modifier.fillMaxWidth())
             Botao("Ver planejamentos", { e.ir(Tela.PLANEJAMENTOS) }, Modifier.fillMaxWidth())
+        }
+    }
+}
+
+/**
+ * RF20 / RN15: o que fazer se esta conexão for perdida. Sempre uma alternativa, nunca uma proteção (RN07).
+ * [abertoPorPadrao]: o plano manda abrir já aberto quando a conexão é Arriscada (RF19); até as duas telas
+ * andarem juntas ele chega falso.
+ */
+@Composable
+private fun PlanoBUi(e: Estado, r: Rota, conexao: Int, abertoPorPadrao: Boolean = false) {
+    val c = cores()
+    val forma = RoundedCornerShape(12.dp)
+    var aberto by remember(r.id, conexao) { mutableStateOf(abertoPorPadrao) }
+    Column(Modifier.fillMaxWidth().clip(forma).border(1.dp, c.line, forma).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(Modifier.fillMaxWidth().heightIn(min = 36.dp).clickable { aberto = !aberto }, horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            T("Plano B: se você perder esta conexão", 14, FontWeight.SemiBold, mod = Modifier.weight(1f))
+            T(if (aberto) "Ocultar" else "Ver plano B", 14, FontWeight.SemiBold, c.primary)
+        }
+        if (!aberto) return@Column
+        T("Alternativa, não proteção: você compra um novo bilhete.", 13, cor = c.muted)
+        val plano = remember(r.id, conexao, e.base, e.paramsPlanoB, e.params, e.terminais) { e.planoB(r, conexao) }
+        if (plano == null) {
+            val carga = e.baseCarga
+            if (carga is Carga.Erro) {
+                T(carga.mensagem, 14, cor = c.erro)
+                Link("Tentar de novo") { e.garantirBase(e.rData) }
+            } else T("Carregando as viagens do dia…", 14, cor = c.muted)
+            return@Column
+        }
+        if (plano.semOpcao) {
+            T("Sem outra saída nas próximas ${e.paramsPlanoB.janelaH} h.", 14, FontWeight.SemiBold)
+            T("Tente outra data ou outra rota.", 13, cor = c.muted)
+            Botao("Editar busca", { e.ir(Tela.BUSCAR) }, pequeno = true)
+            return@Column
+        }
+        val destinoPerdida = r.viagens[conexao + 1].destino
+        plano.opcoes.forEachIndexed { n, o ->
+            if (n > 0) Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                T(
+                    if (o.tipo == TipoPlanoB.MESMA_CIDADE) "Opção ${n + 1} · outra saída para ${e.cidade(destinoPerdida)}"
+                    else "Rota nova até ${e.cidade(r.destino)}",
+                    14, FontWeight.SemiBold,
+                )
+                o.novas.forEach { v ->
+                    T("${hora(v.saidaMin)} ${e.cidade(v.origem)} → ${hora(v.chegadaMin)} ${e.cidade(v.destino)} · ${v.empresa} · ${v.categoria} · ${centavosParaReais(v.precoCentavos)} / pessoa", 13)
+                    T("${dataViagem(e.rData, v.saidaMin)} · ${e.terminal(v.origem)} → ${e.terminal(v.destino)}", 13, cor = c.muted)
+                }
+                if (o.aproveitadas.isNotEmpty()) {
+                    T("Continuam valendo: " + o.aproveitadas.joinToString(" · ") { "${e.cidade(it.origem)} → ${e.cidade(it.destino)} (${hora(it.saidaMin)})" }, 13, cor = c.muted)
+                }
+                val fim = o.chegadaFinalMin
+                if (fim == null) T("Depois desta saída não há como completar a viagem até ${e.cidade(r.destino)}.", 13, FontWeight.SemiBold, c.erro)
+                else T("Chegada em ${e.cidade(r.destino)}: ${hora(fim)} · ${dataViagem(e.rData, fim)} (${atrasoTxt(o.atrasoMin ?: 0)})", 13, FontWeight.SemiBold)
+                T(
+                    "Custo novo: ${centavosParaReais(o.novosBilhetesCentavos)} por pessoa" +
+                        if (e.rPax > 1) " · ${centavosParaReais(o.novosBilhetesCentavos * e.rPax)} para o grupo" else "",
+                    13,
+                )
+                T("Bilhetes que deixam de ser usados: ${centavosParaReais(o.bilhetesNaoUsadosCentavos)} por pessoa (podem não ser reembolsados, conforme a empresa).", 13, cor = c.muted)
+            }
         }
     }
 }
