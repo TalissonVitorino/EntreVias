@@ -33,6 +33,7 @@ fun Application.module() {
     routing {
         rotasDeConta()
         rotasDeCarteira()
+        rotasDeCompra()
         get("/") { call.respondText(sayHello("Ktor")) }
         get("/api/saude") { call.respondText("ok") }
         get("/api/cidades") { call.respond(Banco.terminais()) }

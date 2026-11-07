@@ -1,0 +1,164 @@
+package br.com.talisson.entrevias.domain
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Regras de preço da compra. São HIPÓTESES a validar com o grupo (como a RN01): a criança paga a metade, o idoso tem a
+ * gratuidade (mediante comprovação no embarque) e o bebê de colo não paga nem ocupa poltrona.
+ */
+object RegrasDePreco {
+    const val CRIANCA_PCT = 50
+    const val TAXA_CANCELAMENTO_PCT = 5
+    const val MAX_PASSAGEIROS = 6
+    const val RESERVA_SEG = 15 * 60L
+    const val PIX_VALIDADE_SEG = 10 * 60L
+    const val POLTRONAS = 40
+    val POLTRONAS_PCD = setOf(1, 5)
+
+    /** Percentual do preço que a categoria PAGA. */
+    fun pctPago(categoria: String) = when (categoria) {
+        CategoriaPassageiro.COLO, CategoriaPassageiro.IDOSO -> 0
+        CategoriaPassageiro.CRIANCA -> CRIANCA_PCT
+        else -> 100
+    }
+
+    /** Menor de 12 anos não viaja sozinho: precisa de ao menos um adulto ou idoso no pedido. */
+    fun temResponsavel(categorias: List<String>) = categorias.any { it == CategoriaPassageiro.ADULTO || it == CategoriaPassageiro.IDOSO }
+
+    fun poltronasNecessarias(categorias: List<String>) = categorias.count { it != CategoriaPassageiro.COLO }
+}
+
+@Serializable
+data class Cupom(val codigo: String, val percentual: Int)
+
+/** Valores sempre em centavos. `base` = subtotal − desconto de categoria; o cupom incide sobre a base. */
+@Serializable
+data class Totais(
+    val subtotalCentavos: Int,
+    val descontoCategoriaCentavos: Int,
+    val cupomCentavos: Int,
+    val totalCentavos: Int,
+)
+
+object Cotador {
+    /**
+     * @param precosDosTrechos preço cheio de UMA pessoa em cada trecho
+     * @param categorias categoria de cada passageiro do pedido
+     * @param cupomPct percentual do cupom, ou `null`
+     * Arredonda para baixo cada parcela, para o total nunca passar do que a soma das linhas mostra.
+     */
+    fun cotar(precosDosTrechos: List<Int>, categorias: List<String>, cupomPct: Int?): Totais {
+        val comPoltrona = categorias.filter { it != CategoriaPassageiro.COLO }
+        var subtotal = 0; var desconto = 0
+        for (preco in precosDosTrechos) for (cat in comPoltrona) {
+            subtotal += preco
+            desconto += preco - preco * RegrasDePreco.pctPago(cat) / 100
+        }
+        val base = subtotal - desconto
+        val cupom = if (cupomPct != null) base * cupomPct / 100 else 0
+        return Totais(subtotal, desconto, cupom, base - cupom)
+    }
+
+    /** Reembolso de um cancelamento: o total pago menos a taxa. A taxa arredonda para cima (nunca a favor de quem paga a menos). */
+    fun reembolso(totalPagoCentavos: Int, taxaPct: Int = RegrasDePreco.TAXA_CANCELAMENTO_PCT): Pair<Int, Int> {
+        val taxa = (totalPagoCentavos * taxaPct + 99) / 100
+        return taxa to (totalPagoCentavos - taxa).coerceAtLeast(0)
+    }
+}
+
+// ---------------------------------------------------------------- DTOs do pedido
+
+object StatusPedido {
+    const val CARRINHO = "carrinho"
+    const val PAGO = "pago"
+    const val CANCELADO = "cancelado"
+    const val EXPIRADO = "expirado"
+}
+
+@Serializable
+data class PedidoTrecho(
+    val ordem: Int, val viagemId: Int, val empresa: String, val categoria: String,
+    val origem: String, val destino: String, val saidaEm: Long, val chegadaEm: Long,
+    val precoUnitCentavos: Int, val poltronas: List<Int> = emptyList(), val plataforma: Int? = null,
+)
+
+@Serializable
+data class PedidoPassageiro(val nome: String, val categoria: String, val idade: Int, val documentoFinal: String? = null, val acessibilidade: String? = null)
+
+@Serializable
+data class Bilhete(val codigo: String, val trecho: Int, val passageiro: String, val poltrona: Int?, val plataforma: Int)
+
+@Serializable
+data class Pedido(
+    val id: Int,
+    val codigo: String,
+    val status: String,
+    val trechos: List<PedidoTrecho>,
+    val passageiros: List<PedidoPassageiro>,
+    val totais: Totais,
+    val cupom: String? = null,
+    val criadoEm: Long = 0,
+    val pagoEm: Long? = null,
+    val metodo: String? = null,
+    val reservaExpiraEm: Long? = null,
+    val canceladoEm: Long? = null,
+    val reembolsoCentavos: Int? = null,
+    val bilhetes: List<Bilhete> = emptyList(),
+) {
+    val saidaEm get() = trechos.minOf { it.saidaEm }
+    val poltronasCompletas get() = trechos.all { it.poltronas.size == RegrasDePreco.poltronasNecessarias(passageiros.map { p -> p.categoria }) }
+}
+
+@Serializable
+data class NovoPedido(val viagemIds: List<Int>, val passageiroIds: List<Int>, val cupom: String? = null)
+
+@Serializable
+data class CupomPedido(val codigo: String)
+
+/** Mapa de poltronas de um trecho: o que está ocupado, o que é PcD e o que é meu (reservado neste pedido). */
+@Serializable
+data class MapaDePoltronas(val viagemId: Int, val total: Int, val ocupadas: List<Int>, val pcd: List<Int>, val minhas: List<Int>)
+
+@Serializable
+data class EscolhaDePoltronas(val viagemId: Int, val poltronas: List<Int>)
+
+@Serializable
+data class EscolhasPedido(val escolhas: List<EscolhaDePoltronas>)
+
+// ---------------------------------------------------------------- pagamento (SIMULADO, ver docs/SIMULADOS.md)
+
+object StatusPagamento {
+    const val PENDENTE = "pendente"
+    const val APROVADO = "aprovado"
+    const val RECUSADO = "recusado"
+    const val EXPIRADO = "expirado"
+}
+
+@Serializable
+data class Pagamento(
+    val id: Int, val pedidoId: Int, val metodo: String, val status: String,
+    val codigoPix: String? = null, val expiraEm: Long? = null, val motivo: String? = null, val parcelas: Int = 1,
+)
+
+@Serializable
+data class PagamentoCartaoPedido(val ultimos4: String, val bandeira: String, val parcelas: Int = 1)
+
+@Serializable
+data class CancelamentoPrevia(val totalPagoCentavos: Int, val taxaCentavos: Int, val reembolsoCentavos: Int, val taxaPct: Int, val prazoReembolsoHoras: Int = 72)
+
+@Serializable
+data class CancelamentoPedido(val motivo: String? = null)
+
+// ---------------------------------------------------------------- D4 notificações
+
+object TipoNotificacao {
+    const val COMPRA = "compra"
+    const val CANCELAMENTO = "cancelamento"
+    const val ATRASO = "atraso"
+    const val HORARIO = "horario"
+    const val VIAGEM_CANCELADA = "viagem_cancelada"
+    const val CONEXAO_RISCO = "conexao_risco"
+}
+
+@Serializable
+data class Notificacao(val id: Int, val tipo: String, val titulo: String, val texto: String, val pedidoId: Int? = null, val criadaEm: Long, val lida: Boolean = false)

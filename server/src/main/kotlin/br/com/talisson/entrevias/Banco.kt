@@ -79,6 +79,10 @@ object Banco {
             it.execute("create index if not exists idx_passageiro_usuario on passageiro(usuario_id)")
             it.execute("create table if not exists tentativa_login (chave TEXT PRIMARY KEY, falhas INTEGER NOT NULL DEFAULT 0, bloqueado_ate INTEGER)")
         }
+        // Compra: tabelas e cupom inicial. Um script SQL idempotente, usado em banco novo e antigo.
+        val sql = Banco::class.java.getResourceAsStream("/migracao-compra.sql")!!.bufferedReader().readText()
+        sql.lines().map { it.substringBefore("--") }.joinToString("\n").split(";").map { it.trim() }.filter { it.isNotEmpty() }
+            .forEach { cmd -> c.createStatement().use { it.execute(cmd) } }
     }
 
     private fun criarEsquema(c: Connection) {

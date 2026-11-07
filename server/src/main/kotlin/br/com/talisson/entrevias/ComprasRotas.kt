@@ -1,0 +1,110 @@
+package br.com.talisson.entrevias
+
+import br.com.talisson.entrevias.domain.AvisoApi
+import br.com.talisson.entrevias.domain.CancelamentoPedido
+import br.com.talisson.entrevias.domain.CupomPedido
+import br.com.talisson.entrevias.domain.EscolhasPedido
+import br.com.talisson.entrevias.domain.NovoPedido
+import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
+import io.ktor.http.*
+import io.ktor.server.application.*
+import io.ktor.server.response.*
+import io.ktor.server.routing.*
+
+/** Roda uma regra de compra e traduz [ErroDeCompra] no status HTTP certo, com texto genérico. */
+private suspend inline fun ApplicationCall.regra(bloco: () -> Any) {
+    try { respond(bloco()) } catch (e: ErroDeCompra) { erro(HttpStatusCode.fromValue(e.status), e.message) }
+}
+
+private suspend fun ApplicationCall.limitar(l: LimiteDeTaxa, chave: String): Boolean {
+    val espera = l.tentar(chave) ?: return true
+    response.header(HttpHeaders.RetryAfter, espera.toString())
+    erro(HttpStatusCode.TooManyRequests, "Muitas tentativas. Tente de novo mais tarde.")
+    return false
+}
+
+private fun ApplicationCall.id(nome: String = "id") = parameters[nome]?.toIntOrNull()
+
+/** C1 a C7 e D1 a D3. Tudo exige login e só enxerga os próprios pedidos. */
+fun Route.rotasDeCompra() {
+    get("/api/pagamento/estado") { call.respond(mapOf("simulado" to Psp.simulado, "disponivel" to Psp.disponivel)) }
+
+    post("/api/pedidos") {
+        val u = call.exigeLogin() ?: return@post
+        if (!call.limitar(Limites.pedidoPorUsuario, u.id.toString())) return@post
+        val p = call.corpo<NovoPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        try { call.respond(HttpStatusCode.Created, Compras.criar(u.id, p)) } catch (e: ErroDeCompra) { call.erro(HttpStatusCode.fromValue(e.status), e.message) }
+    }
+    get("/api/pedidos") { val u = call.exigeLogin() ?: return@get; call.respond(Compras.pedidos(u.id)) }
+    get("/api/pedidos/{id}") {
+        val u = call.exigeLogin() ?: return@get
+        val ped = call.id()?.let { Compras.pedido(u.id, it) } ?: return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.respond(ped)
+    }
+
+    put("/api/pedidos/{id}/cupom") {
+        val u = call.exigeLogin() ?: return@put
+        if (!call.limitar(Limites.cupomPorUsuario, u.id.toString())) return@put
+        val id = call.id() ?: return@put call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        val p = call.corpo<CupomPedido>() ?: return@put call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        call.regra { Compras.definirCupom(u.id, id, p.codigo) }
+    }
+    delete("/api/pedidos/{id}/cupom") {
+        val u = call.exigeLogin() ?: return@delete
+        val id = call.id() ?: return@delete call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { Compras.definirCupom(u.id, id, null) }
+    }
+
+    get("/api/pedidos/{id}/poltronas/{viagemId}") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id(); val v = call.id("viagemId")
+        if (id == null || v == null) return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { Compras.mapa(u.id, id, v) }
+    }
+    put("/api/pedidos/{id}/poltronas") {
+        val u = call.exigeLogin() ?: return@put
+        val id = call.id() ?: return@put call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        val p = call.corpo<EscolhasPedido>() ?: return@put call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        call.regra { Compras.escolher(u.id, id, p.escolhas) }
+    }
+
+    post("/api/pedidos/{id}/pagamento/pix") {
+        val u = call.exigeLogin() ?: return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        try { call.respond(HttpStatusCode.Created, Compras.pagarComPix(u.id, id)) } catch (e: ErroDeCompra) { call.erro(HttpStatusCode.fromValue(e.status), e.message) }
+    }
+    post("/api/pedidos/{id}/pagamento/cartao") {
+        val u = call.exigeLogin() ?: return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        val p = call.corpo<PagamentoCartaoPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        try { call.respond(HttpStatusCode.Created, Compras.pagarComCartao(u.id, id, p)) } catch (e: ErroDeCompra) { call.erro(HttpStatusCode.fromValue(e.status), e.message) }
+    }
+    get("/api/pagamentos/{id}") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id() ?: return@get call.erro(HttpStatusCode.NotFound, "Pagamento não encontrado.")
+        call.regra { Compras.pagamento(u.id, id) }
+    }
+    post("/api/pagamentos/{id}/simular") {
+        val u = call.exigeLogin() ?: return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pagamento não encontrado.")
+        call.regra { Compras.simularPixPago(u.id, id) }
+    }
+
+    get("/api/pedidos/{id}/cancelamento") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id() ?: return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { Compras.previaDeCancelamento(u.id, id) }
+    }
+    post("/api/pedidos/{id}/cancelar") {
+        val u = call.exigeLogin() ?: return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        val p = call.corpo<CancelamentoPedido>() ?: CancelamentoPedido()
+        call.regra { Compras.cancelar(u.id, id, p.motivo) }
+    }
+
+    get("/api/notificacoes") { val u = call.exigeLogin() ?: return@get; call.respond(Notificacoes.lista(u.id)) }
+    post("/api/notificacoes/lidas") {
+        val u = call.exigeLogin() ?: return@post
+        Notificacoes.marcarLidas(u.id); call.respond(AvisoApi("Marcadas como lidas."))
+    }
+}

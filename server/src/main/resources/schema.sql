@@ -200,3 +200,6 @@ CREATE TABLE anuncio (                         -- R4 (RF14, RNF08)
   rotulo          TEXT NOT NULL DEFAULT 'Patrocinado' CHECK (rotulo = 'Patrocinado'),  -- RNF08 no banco
   CHECK (vigencia_fim > vigencia_inicio)
 );
+
+-- As tabelas da compra (cupom, pedido, pedido_trecho, pedido_passageiro, reserva_assento, pagamento, bilhete)
+-- ficam em migracao-compra.sql, que roda em todo início (idempotente) e serve a banco novo e antigo.
