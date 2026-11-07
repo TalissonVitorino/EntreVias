@@ -378,4 +378,14 @@ class ComprasRotasTest {
         val lista = json.decodeFromString(ListSerializer(Pedido.serializer()), client.req(HttpMethod.Get, "/api/pedidos", p.token).bodyAsText())
         assertEquals(listOf(segundo.id, primeiro.id), lista.map { it.id }, "sem o carrinho e sem o pedido da outra pessoa")
     }
+
+    @Test fun filtrosDoHistoricoSeparamProximasPassadasECanceladas() = comApp {
+        val p = pessoa()
+        val futura = client.pago(p, livre(9)); val cancelada = client.pago(p, livre(10)); client.req(HttpMethod.Post, "/api/pedidos/${cancelada.id}/cancelar", p.token, "{}")
+        suspend fun ids(f: String?) = json.decodeFromString(ListSerializer(Pedido.serializer()), client.req(HttpMethod.Get, "/api/pedidos" + (f?.let { "?filtro=$it" } ?: ""), p.token).bodyAsText()).map { it.id }.toSet()
+        assertEquals(setOf(futura.id, cancelada.id), ids(null)); assertEquals(setOf(futura.id), ids("proximas")); assertEquals(emptySet(), ids("passadas")); assertEquals(setOf(cancelada.id), ids("canceladas"))
+        Contas.agora = { futura.saidaEm + 1 }
+        assertEquals(emptySet(), ids("proximas")); assertEquals(setOf(futura.id), ids("passadas"))
+        assertEquals(setOf(futura.id, cancelada.id), ids("qualquer-coisa"), "filtro desconhecido = todas")
+    }
 }

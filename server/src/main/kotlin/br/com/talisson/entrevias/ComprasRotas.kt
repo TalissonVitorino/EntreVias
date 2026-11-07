@@ -8,6 +8,7 @@ import br.com.talisson.entrevias.domain.NovoPedido
 import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
@@ -35,7 +36,7 @@ fun Route.rotasDeCompra() {
         val p = call.corpo<NovoPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
         try { call.respond(HttpStatusCode.Created, Compras.criar(u.id, p)) } catch (e: ErroDeCompra) { call.erro(HttpStatusCode.fromValue(e.status), e.message) }
     }
-    get("/api/pedidos") { val u = call.exigeLogin() ?: return@get; call.respond(Compras.pedidos(u.id)) }
+    get("/api/pedidos") { val u = call.exigeLogin() ?: return@get; call.respond(Compras.pedidos(u.id, call.request.queryParameters["filtro"])) }
     get("/api/pedidos/{id}") {
         val u = call.exigeLogin() ?: return@get
         val ped = call.id()?.let { Compras.pedido(u.id, it) } ?: return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")

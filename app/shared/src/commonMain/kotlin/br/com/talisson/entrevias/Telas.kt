@@ -368,8 +368,9 @@ fun TelaRota(e: Estado) {
         Cartao {
             T("Guardar este caminho · Total conhecido", 14, cor = c.muted)
             T(centavosParaReais(total), 30, FontWeight.Bold, ls = -1f)
+            Botao("Comprar esta viagem", { e.iniciarCompra(r) }, Modifier.fillMaxWidth(), primario = true, grande = true)
             if (e.salvoAgora) T("✓ Salvo neste aparelho", 15, FontWeight.SemiBold, c.ok)
-            else Botao("Salvar planejamento", { e.salvar(r) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+            else Botao("Salvar planejamento", { e.salvar(r) }, Modifier.fillMaxWidth(), grande = true)
             if (e.limiteAtingido) T(LimiteRoteiros.MENSAGEM_CHEIO, 14, FontWeight.SemiBold, c.erro)
             Botao("Simular esta viagem", { e.simular(r) }, Modifier.fillMaxWidth())
             Botao("Ver planejamentos", { e.ir(Tela.PLANEJAMENTOS) }, Modifier.fillMaxWidth())

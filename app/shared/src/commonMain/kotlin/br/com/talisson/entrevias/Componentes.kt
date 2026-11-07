@@ -191,3 +191,33 @@ fun IconeSalvos(cor: Color) {
         drawPath(p, cor, style = Stroke(2f * s))
     }
 }
+
+@Composable
+fun IconeViagens(cor: Color) {
+    Canvas(Modifier.size(22.dp)) {
+        val s = size.width / 24f
+        val p = androidx.compose.ui.graphics.Path().apply {
+            moveTo(3f * s, 7f * s); lineTo(21f * s, 7f * s); lineTo(21f * s, 10f * s)
+            cubicTo(19f * s, 10f * s, 19f * s, 14f * s, 21f * s, 14f * s); lineTo(21f * s, 17f * s)
+            lineTo(3f * s, 17f * s); lineTo(3f * s, 14f * s); cubicTo(5f * s, 14f * s, 5f * s, 10f * s, 3f * s, 10f * s); close()
+        }
+        drawPath(p, cor, style = Stroke(2f * s))
+        drawLine(cor, Offset(14f * s, 8f * s), Offset(14f * s, 16f * s), 1.5f * s)
+    }
+}
+
+/** Sino do cabeçalho (D4): o número vermelho conta os avisos não lidos. */
+@Composable
+fun Sino(naoLidos: Int, onClick: () -> Unit) {
+    val c = cores()
+    Box(Modifier.size(36.dp).clip(CircleShape).background(c.field).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Canvas(Modifier.size(18.dp)) {
+            val s = size.width / 24f
+            val p = androidx.compose.ui.graphics.Path().apply {
+                moveTo(6f * s, 17f * s); lineTo(6f * s, 11f * s); cubicTo(6f * s, 6f * s, 18f * s, 6f * s, 18f * s, 11f * s); lineTo(18f * s, 17f * s); lineTo(20f * s, 19f * s); lineTo(4f * s, 19f * s); close()
+            }
+            drawPath(p, c.fg, style = Stroke(2f * s))
+        }
+        if (naoLidos > 0) Box(Modifier.align(Alignment.TopEnd).size(16.dp).clip(CircleShape).background(c.erro), contentAlignment = Alignment.Center) { T(if (naoLidos > 9) "9+" else "$naoLidos", 10, FontWeight.Bold, androidx.compose.ui.graphics.Color.White) }
+    }
+}

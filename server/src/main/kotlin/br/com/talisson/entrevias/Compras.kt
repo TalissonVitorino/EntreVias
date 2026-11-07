@@ -104,10 +104,18 @@ object Compras {
         }
     }
 
-    fun pedidos(usuarioId: Int): List<Pedido> = Banco.conexao().use { c ->
+    /** D1. `filtro`: "proximas" (pagas que ainda não saíram), "passadas" (pagas que já saíram), "canceladas"; outro valor = todas (menos o carrinho). */
+    fun pedidos(usuarioId: Int, filtro: String? = null): List<Pedido> = Banco.conexao().use { c ->
         liberarVencidas(c)
-        c.prepareStatement("select * from pedido where usuario_id = ? and status <> 'carrinho' order by criado_em desc, id desc").use {
+        val todos = c.prepareStatement("select * from pedido where usuario_id = ? and status <> 'carrinho' order by criado_em desc, id desc").use {
             it.setInt(1, usuarioId); it.executeQuery().use { rs -> rs.lista { r -> montar(c, r) } }
+        }
+        val t = Contas.agora()
+        when (filtro) {
+            "proximas" -> todos.filter { it.status == StatusPedido.PAGO && it.saidaEm > t }
+            "passadas" -> todos.filter { it.status == StatusPedido.PAGO && it.saidaEm <= t }
+            "canceladas" -> todos.filter { it.status == StatusPedido.CANCELADO }
+            else -> todos
         }
     }
 

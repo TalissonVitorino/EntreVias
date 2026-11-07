@@ -1,6 +1,17 @@
 package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.AvisoApi
+import br.com.talisson.entrevias.domain.CancelamentoPedido
+import br.com.talisson.entrevias.domain.CancelamentoPrevia
+import br.com.talisson.entrevias.domain.CupomPedido
+import br.com.talisson.entrevias.domain.EscolhaDePoltronas
+import br.com.talisson.entrevias.domain.EscolhasPedido
+import br.com.talisson.entrevias.domain.MapaDePoltronas
+import br.com.talisson.entrevias.domain.NovoPedido
+import br.com.talisson.entrevias.domain.Notificacao
+import br.com.talisson.entrevias.domain.Pagamento
+import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
+import br.com.talisson.entrevias.domain.Pedido
 import br.com.talisson.entrevias.domain.FormaPagamento
 import br.com.talisson.entrevias.domain.FormaPagamentoPedido
 import br.com.talisson.entrevias.domain.Passageiro
@@ -117,4 +128,23 @@ class Api(private val base: String = urlBase()) {
     suspend fun adicionarPassageiro(token: String, p: PassageiroPedido): Resp<Passageiro> = chamar { http.post("$base/api/passageiros") { auth(token); json(p) } }
     suspend fun editarPassageiro(token: String, id: Int, p: PassageiroPedido): Resp<Passageiro> = chamar { http.put("$base/api/passageiros/$id") { auth(token); json(p) } }
     suspend fun removerPassageiro(token: String, id: Int): Resp<List<Passageiro>> = chamar { http.delete("$base/api/passageiros/$id") { auth(token) } }
+
+    // ---------- compra (C1 a C7), histórico e cancelamento (D1 a D3), avisos (D4) ----------
+
+    suspend fun estadoPagamento(): Resp<Map<String, Boolean>> = chamar { http.get("$base/api/pagamento/estado") }
+    suspend fun criarPedido(token: String, p: NovoPedido): Resp<Pedido> = chamar { http.post("$base/api/pedidos") { auth(token); json(p) } }
+    suspend fun pedido(token: String, id: Int): Resp<Pedido> = chamar { http.get("$base/api/pedidos/$id") { auth(token) } }
+    suspend fun pedidos(token: String, filtro: String? = null): Resp<List<Pedido>> = chamar { http.get("$base/api/pedidos") { auth(token); if (filtro != null) parameter("filtro", filtro) } }
+    suspend fun cupom(token: String, id: Int, codigo: String?): Resp<Pedido> =
+        chamar { if (codigo == null) http.delete("$base/api/pedidos/$id/cupom") { auth(token) } else http.put("$base/api/pedidos/$id/cupom") { auth(token); json(CupomPedido(codigo)) } }
+    suspend fun mapa(token: String, pedidoId: Int, viagemId: Int): Resp<MapaDePoltronas> = chamar { http.get("$base/api/pedidos/$pedidoId/poltronas/$viagemId") { auth(token) } }
+    suspend fun escolherPoltronas(token: String, pedidoId: Int, e: List<EscolhaDePoltronas>): Resp<Pedido> = chamar { http.put("$base/api/pedidos/$pedidoId/poltronas") { auth(token); json(EscolhasPedido(e)) } }
+    suspend fun pagarPix(token: String, pedidoId: Int): Resp<Pagamento> = chamar { http.post("$base/api/pedidos/$pedidoId/pagamento/pix") { auth(token) } }
+    suspend fun pagarCartao(token: String, pedidoId: Int, p: PagamentoCartaoPedido): Resp<Pagamento> = chamar { http.post("$base/api/pedidos/$pedidoId/pagamento/cartao") { auth(token); json(p) } }
+    suspend fun pagamento(token: String, id: Int): Resp<Pagamento> = chamar { http.get("$base/api/pagamentos/$id") { auth(token) } }
+    suspend fun simularPix(token: String, id: Int): Resp<Pagamento> = chamar { http.post("$base/api/pagamentos/$id/simular") { auth(token) } }
+    suspend fun previaCancelamento(token: String, id: Int): Resp<CancelamentoPrevia> = chamar { http.get("$base/api/pedidos/$id/cancelamento") { auth(token) } }
+    suspend fun cancelar(token: String, id: Int, motivo: String?): Resp<Pedido> = chamar { http.post("$base/api/pedidos/$id/cancelar") { auth(token); json(CancelamentoPedido(motivo)) } }
+    suspend fun avisos(token: String): Resp<List<Notificacao>> = chamar { http.get("$base/api/notificacoes") { auth(token) } }
+    suspend fun marcarAvisosLidos(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/notificacoes/lidas") { auth(token) } }
 }
