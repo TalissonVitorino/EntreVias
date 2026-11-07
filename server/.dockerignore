@@ -1,0 +1,8 @@
+build/tmp
+build/classes
+build/kotlin
+build/libs
+build/reports
+build/test-results
+build/distributions
+Dockerfile

@@ -1,0 +1,22 @@
+# Servidor do EntreVias em Docker. Sobe sozinho ao dar Play no Android Studio (ver server/build.gradle.kts)
+# ou na mão: ./gradlew :server:subirServidor
+# Nome do projeto fixo: sem isto o Compose usa o nome da PASTA, e o container entrevias-servidor
+# (nome fixo) colidiria entre checkouts/worktrees diferentes, cada um com um banco próprio.
+name: entrevias
+
+services:
+  servidor:
+    container_name: entrevias-servidor
+    build:
+      context: server
+    ports:
+      - "8080:8080"            # o emulador Android acessa por 10.0.2.2:8080, o simulador iOS e o navegador por localhost:8080
+    restart: unless-stopped    # se cair, volta; se o Mac reiniciar, volta com o Docker
+    volumes:
+      - entrevias-dados:/dados # o banco sobrevive a recriar o container
+    environment:
+      GESTOR_EMAIL: ${GESTOR_EMAIL:-}      # defina no arquivo .env (fora do git) para ter um gestor
+      GESTOR_SENHA: ${GESTOR_SENHA:-}
+      CAIXA_DE_SAIDA_DEV: ${CAIXA_DE_SAIDA_DEV:-false}   # true só na sua máquina: mostra os e-mails simulados
+volumes:
+  entrevias-dados:
