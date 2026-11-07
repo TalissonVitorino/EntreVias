@@ -4,6 +4,9 @@ import br.com.talisson.entrevias.domain.AvisoApi
 import br.com.talisson.entrevias.domain.CancelamentoPedido
 import br.com.talisson.entrevias.domain.CupomPedido
 import br.com.talisson.entrevias.domain.EscolhasPedido
+import br.com.talisson.entrevias.domain.NovoChamado
+import br.com.talisson.entrevias.domain.RespostaChamado
+import br.com.talisson.entrevias.domain.NovaAvaliacao
 import br.com.talisson.entrevias.domain.NovoPedido
 import br.com.talisson.entrevias.domain.OcorrenciaPedido
 import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
@@ -120,4 +123,35 @@ fun Route.rotasDeCompra() {
 
     // D5: a viagem em andamento ou as próximas, com a etapa de cada trecho.
     get("/api/viagens-ativas") { val u = call.exigeLogin() ?: return@get; call.respond(Ocorrencias.ativas(u.id)) }
+
+    // F1: ajuda. A pessoa abre e acompanha os próprios chamados; o gestor lê todos e responde (por enquanto só pela API).
+    post("/api/chamados") {
+        val u = call.exigeLogin() ?: return@post
+        if (!call.limitar(Limites.chamadoPorUsuario, u.id.toString())) return@post
+        val p = call.corpo<NovoChamado>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        try { call.respond(HttpStatusCode.Created, Ajuda.abrir(u.id, p)) } catch (e: ErroDeCompra) { call.erro(HttpStatusCode.fromValue(e.status), e.message) }
+    }
+    get("/api/chamados") { val u = call.exigeLogin() ?: return@get; call.respond(Ajuda.meus(u.id)) }
+    get("/api/gestor/chamados") { call.exigeGestor() ?: return@get; call.respond(Ajuda.todos()) }
+    post("/api/gestor/chamados/{id}/resposta") {
+        call.exigeGestor() ?: return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Chamado não encontrado.")
+        val p = call.corpo<RespostaChamado>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        call.regra { Ajuda.responder(id, p.texto) }
+    }
+
+    // F2: avaliação e reclamação, por trecho, depois de chegar.
+    post("/api/pedidos/{id}/trechos/{trecho}/avaliacao") {
+        val u = call.exigeLogin() ?: return@post
+        val id = call.id(); val t = call.id("trecho")
+        if (id == null || t == null) return@post call.erro(HttpStatusCode.NotFound, "Viagem não encontrada.")
+        val p = call.corpo<NovaAvaliacao>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        try { call.respond(HttpStatusCode.Created, Ajuda.avaliar(u.id, id, t, p)) } catch (e: ErroDeCompra) { call.erro(HttpStatusCode.fromValue(e.status), e.message) }
+    }
+    get("/api/pedidos/{id}/avaliacoes") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id() ?: return@get call.erro(HttpStatusCode.NotFound, "Viagem não encontrada.")
+        call.regra { Ajuda.minhas(u.id, id) }
+    }
+    get("/api/gestor/reclamacoes") { call.exigeGestor() ?: return@get; call.respond(Ajuda.todasAsReclamacoes()) }
 }

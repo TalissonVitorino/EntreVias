@@ -3,6 +3,8 @@ package br.com.talisson.entrevias.domain
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class CompraTest {
@@ -84,5 +86,29 @@ class EtapaDoTrechoTest {
     @Test fun pedidoDevolveUmaEtapaPorTrecho() {
         val p = Pedido(1, "EV-1", "pago", listOf(t(1000, 2000), t(2500, 3500)), emptyList(), Totais(0, 0, 0, 0))
         assertEquals(listOf("concluido", "proximo"), EtapaDoTrecho.de(p, 2100))
+    }
+}
+
+class ValidacaoAjudaTest {
+    @Test fun chamadoPrecisaDeAssuntoDaListaEOutroPedeTexto() {
+        assertNull(ValidacaoAjuda.chamado(NovoChamado(assunto = "Reembolso")))
+        assertNotNull(ValidacaoAjuda.chamado(NovoChamado(assunto = "Inventado")))
+        assertNotNull(ValidacaoAjuda.chamado(NovoChamado(assunto = "Outro"))); assertNotNull(ValidacaoAjuda.chamado(NovoChamado(assunto = "Outro", mensagem = "oi")))
+        assertNull(ValidacaoAjuda.chamado(NovoChamado(assunto = "Outro", mensagem = "Perdi minha mala")))
+        assertNotNull(ValidacaoAjuda.chamado(NovoChamado(assunto = "Reembolso", mensagem = "x".repeat(1001))))
+        assertNotNull(ValidacaoAjuda.chamado(NovoChamado(trecho = 1, assunto = "Reembolso")), "trecho sem viagem")
+    }
+
+    @Test fun avaliacaoTemEstrelasTagsEComentarioLimitados() {
+        assertNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(4, listOf("Pontual", "Conforto"))))
+        assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(0))); assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(6)))
+        assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(3, listOf("Inventada")))); assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(3, listOf("Pontual", "Pontual"))))
+        assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(3, comentario = "x".repeat(501))))
+    }
+
+    @Test fun reclamacaoExigeTexto() {
+        assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(1, reclamacao = true)))
+        assertNotNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(1, comentario = "ruim", reclamacao = true)))
+        assertNull(ValidacaoAjuda.avaliacao(NovaAvaliacao(1, comentario = "O ônibus não veio", reclamacao = true)))
     }
 }

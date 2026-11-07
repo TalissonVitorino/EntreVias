@@ -101,3 +101,33 @@ CREATE TABLE IF NOT EXISTS viagem_estado (
   cancelada     INTEGER NOT NULL DEFAULT 0 CHECK (cancelada IN (0,1)),
   atualizada_em INTEGER NOT NULL
 );
+
+-- F1: pedidos de ajuda. O suporte é de uma empresa terceira: aqui fica o registro, o protocolo e a resposta.
+CREATE TABLE IF NOT EXISTS chamado (
+  id            INTEGER PRIMARY KEY,
+  usuario_id    INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  pedido_id     INTEGER REFERENCES pedido(id) ON DELETE SET NULL,
+  trecho        INTEGER,
+  assunto       TEXT NOT NULL,
+  mensagem      TEXT,
+  protocolo     TEXT UNIQUE,
+  status        TEXT NOT NULL DEFAULT 'aberto' CHECK (status IN ('aberto','respondido')),
+  resposta      TEXT,
+  criado_em     INTEGER NOT NULL,
+  respondido_em INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_chamado_usuario ON chamado(usuario_id, criado_em);
+
+-- F2: avaliação (e reclamação) de cada trecho viajado. Uma por trecho de cada compra.
+CREATE TABLE IF NOT EXISTS avaliacao (
+  id          INTEGER PRIMARY KEY,
+  usuario_id  INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  pedido_id   INTEGER NOT NULL REFERENCES pedido(id) ON DELETE CASCADE,
+  trecho      INTEGER NOT NULL,
+  estrelas    INTEGER NOT NULL CHECK (estrelas BETWEEN 1 AND 5),
+  tags        TEXT NOT NULL DEFAULT '',
+  comentario  TEXT,
+  reclamacao  INTEGER NOT NULL DEFAULT 0 CHECK (reclamacao IN (0,1)),
+  criada_em   INTEGER NOT NULL,
+  UNIQUE (pedido_id, trecho)
+);

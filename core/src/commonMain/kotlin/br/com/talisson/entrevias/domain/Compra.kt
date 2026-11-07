@@ -164,6 +164,7 @@ object TipoNotificacao {
     const val HORARIO = "horario"
     const val VIAGEM_CANCELADA = "viagem_cancelada"
     const val CONEXAO_RISCO = "conexao_risco"
+    const val SUPORTE = "suporte"
 }
 
 @Serializable
@@ -203,3 +204,47 @@ object EtapaDoTrecho {
 
 @Serializable
 data class ViagemAtiva(val pedido: Pedido, val etapas: List<String>, val agora: Long)
+
+// ---------------------------------------------------------------- F1 ajuda e F2 avaliação
+
+@Serializable
+data class NovoChamado(val pedidoId: Int? = null, val trecho: Int? = null, val assunto: String, val mensagem: String? = null)
+
+@Serializable
+data class Chamado(
+    val id: Int, val protocolo: String, val pedidoId: Int? = null, val trecho: Int? = null, val assunto: String, val mensagem: String? = null,
+    val status: String, val resposta: String? = null, val criadoEm: Long, val respondidoEm: Long? = null,
+)
+
+@Serializable
+data class RespostaChamado(val texto: String)
+
+@Serializable
+data class NovaAvaliacao(val estrelas: Int, val tags: List<String> = emptyList(), val comentario: String? = null, val reclamacao: Boolean = false)
+
+@Serializable
+data class Avaliacao(val id: Int, val pedidoId: Int, val trecho: Int, val estrelas: Int, val tags: List<String>, val comentario: String? = null, val reclamacao: Boolean = false, val criadaEm: Long)
+
+object ValidacaoAjuda {
+    val ASSUNTOS = listOf("Perdi uma conexão", "Atraso ou cancelamento", "Reembolso", "Bagagem e animais", "Acessibilidade", "Outro")
+    val TAGS = listOf("Pontual", "Limpeza", "Conforto", "Acessibilidade", "Atraso")
+    const val MENSAGEM_MAX = 1000
+    const val COMENTARIO_MAX = 500
+    const val RECLAMACAO_MIN = 10
+
+    fun chamado(p: NovoChamado): String? = when {
+        p.assunto !in ASSUNTOS -> "Escolha o assunto."
+        (p.mensagem?.length ?: 0) > MENSAGEM_MAX -> "A mensagem pode ter no máximo $MENSAGEM_MAX caracteres."
+        p.assunto == "Outro" && (p.mensagem?.trim()?.length ?: 0) < 5 -> "Conte o que aconteceu."
+        p.trecho != null && p.pedidoId == null -> "Escolha a viagem."
+        else -> null
+    }
+
+    fun avaliacao(p: NovaAvaliacao): String? = when {
+        p.estrelas !in 1..5 -> "Escolha de 1 a 5 estrelas."
+        p.tags.any { it !in TAGS } || p.tags.distinct().size != p.tags.size -> "Tag inválida."
+        (p.comentario?.length ?: 0) > COMENTARIO_MAX -> "O comentário pode ter no máximo $COMENTARIO_MAX caracteres."
+        p.reclamacao && (p.comentario?.trim()?.length ?: 0) < RECLAMACAO_MIN -> "Para registrar uma reclamação, conte o que aconteceu (mínimo $RECLAMACAO_MIN caracteres)."
+        else -> null
+    }
+}
