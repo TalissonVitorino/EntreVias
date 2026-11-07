@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import br.com.talisson.entrevias.domain.EtapaDoTrecho
 import br.com.talisson.entrevias.domain.Notificacao
 import br.com.talisson.entrevias.domain.Pedido
 import br.com.talisson.entrevias.domain.StatusPedido
@@ -48,6 +49,14 @@ fun TelaHistorico(e: Estado) {
             Eyebrow("Viagens")
             Spacer(Modifier.height(8.dp))
             T("Histórico de compras", 30, FontWeight.Bold, ls = -0.9f)
+        }
+        e.ativas.firstOrNull()?.let { v ->
+            val aCaminho = v.etapas.any { it == EtapaDoTrecho.EM_ANDAMENTO }
+            Cartao(raio = 24, pad = 20, borda = true, mod = Modifier.clickable { e.abrirEmAndamento() }) {
+                Eyebrow(if (aCaminho) "Viagem em andamento" else "Próxima viagem")
+                T(e.rotaDe(v.pedido), 20, FontWeight.Bold, ls = -0.4f)
+                T("${Tempo.dataHora(v.pedido.saidaEm)} · ver etapas ›", 14, cor = c.muted)
+            }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             listOf(null to "Todas", "proximas" to "Próximas", "passadas" to "Passadas", "canceladas" to "Canceladas").forEach { (f, nome) ->
@@ -213,5 +222,49 @@ private fun CartaoAviso(e: Estado, a: Notificacao) {
             }
             if (!a.lida) T("●", 12, FontWeight.Bold, c.primary)
         }
+    }
+}
+
+// ---------------------------------------------------------------- D5 VIAGEM EM ANDAMENTO (US21)
+@Composable
+fun TelaEmAndamento(e: Estado) {
+    val c = cores()
+    if (PrecisaDeLoginPos(e)) return
+    LaunchedEffect(e.usuario?.id) { e.carregarAtivas() }
+    val v = e.ativas.firstOrNull()
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Link("‹  Viagens") { e.abrirHistorico() }
+        if (v == null) {
+            Cartao { T("Nenhuma viagem por vir", 22, FontWeight.Bold); T("Quando você comprar, a próxima viagem aparece aqui, com as etapas.", 15, cor = c.muted); Botao("Buscar viagens", { e.ir(Tela.BUSCAR) }, primario = true) }
+            return@Column
+        }
+        val p = v.pedido
+        val aCaminho = v.etapas.any { it == EtapaDoTrecho.EM_ANDAMENTO }
+        Column {
+            Eyebrow(if (aCaminho) "Hoje · ${Tempo.data(v.agora).br().dropLast(5)}" else "Próxima viagem · ${Tempo.data(p.saidaEm).br().dropLast(5)}")
+            Spacer(Modifier.height(8.dp))
+            T(if (aCaminho) "A caminho" else e.rotaDe(p), 30, FontWeight.Bold, ls = -0.9f, lh = 34)
+            if (aCaminho) T(e.rotaDe(p), 15, cor = c.muted)
+        }
+        if (e.ativasOffline) Aviso("Sem internet", listOf("Mostrando os bilhetes guardados neste aparelho.", "Avisos de atraso só chegam quando houver conexão."))
+        p.trechos.forEachIndexed { i, t ->
+            val etapa = v.etapas.getOrElse(i) { EtapaDoTrecho.PROXIMO }
+            Cartao(raio = 24, pad = 20, borda = true) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
+                    Column(Modifier.weight(1f)) {
+                        T("${e.cidade(t.origem)} → ${e.cidade(t.destino)}", 18, FontWeight.Bold, ls = -0.3f)
+                        T("${t.empresa} · plataforma ${t.plataforma ?: "-"}", 14, cor = c.muted)
+                    }
+                    Etiqueta(when (etapa) { EtapaDoTrecho.CONCLUIDO -> "Concluído"; EtapaDoTrecho.EM_ANDAMENTO -> "A caminho"; EtapaDoTrecho.CANCELADO -> "Cancelado"; else -> "Próximo" })
+                }
+                T("Saída ${Tempo.hora(t.saidaReal)} · chegada ${Tempo.hora(t.chegadaReal)}", 16, FontWeight.SemiBold)
+                if (t.atrasoMin > 0) T("▲ Atrasado ${t.atrasoMin} min (previsto ${Tempo.hora(t.saidaEm)})", 14, FontWeight.SemiBold, c.atencao)
+                else if (t.atrasoMin < 0) T("Saída antecipada em ${-t.atrasoMin} min", 14, FontWeight.SemiBold, c.atencao)
+                else T("No horário", 14, FontWeight.Medium, c.ok)
+                val poltronas = t.poltronas
+                if (poltronas.isNotEmpty()) T("Poltronas ${poltronas.joinToString(", ")}", 14, cor = c.muted)
+            }
+        }
+        Botao("Todos os bilhetes", { e.abrirBilhetes(p) }, Modifier.fillMaxWidth(), primario = true)
     }
 }

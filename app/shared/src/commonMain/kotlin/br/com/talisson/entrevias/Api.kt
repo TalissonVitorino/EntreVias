@@ -12,6 +12,7 @@ import br.com.talisson.entrevias.domain.Notificacao
 import br.com.talisson.entrevias.domain.Pagamento
 import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
 import br.com.talisson.entrevias.domain.Pedido
+import br.com.talisson.entrevias.domain.ViagemAtiva
 import br.com.talisson.entrevias.domain.FormaPagamento
 import br.com.talisson.entrevias.domain.FormaPagamentoPedido
 import br.com.talisson.entrevias.domain.Passageiro
@@ -145,6 +146,7 @@ class Api(private val base: String = urlBase()) {
     suspend fun simularPix(token: String, id: Int): Resp<Pagamento> = chamar { http.post("$base/api/pagamentos/$id/simular") { auth(token) } }
     suspend fun previaCancelamento(token: String, id: Int): Resp<CancelamentoPrevia> = chamar { http.get("$base/api/pedidos/$id/cancelamento") { auth(token) } }
     suspend fun cancelar(token: String, id: Int, motivo: String?): Resp<Pedido> = chamar { http.post("$base/api/pedidos/$id/cancelar") { auth(token); json(CancelamentoPedido(motivo)) } }
+    suspend fun viagensAtivas(token: String): Resp<List<ViagemAtiva>> = chamar { http.get("$base/api/viagens-ativas") { auth(token) } }
     suspend fun avisos(token: String): Resp<List<Notificacao>> = chamar { http.get("$base/api/notificacoes") { auth(token) } }
     suspend fun marcarAvisosLidos(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/notificacoes/lidas") { auth(token) } }
 }

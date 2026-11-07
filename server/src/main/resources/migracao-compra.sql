@@ -93,3 +93,11 @@ CREATE TABLE IF NOT EXISTS aviso (
   lida        INTEGER NOT NULL DEFAULT 0 CHECK (lida IN (0,1))
 );
 CREATE INDEX IF NOT EXISTS idx_aviso_usuario ON aviso(usuario_id, criada_em);
+
+-- D4: o que o gestor registrou sobre uma viagem (atraso/horário/cancelamento). Uma linha por viagem: vale o último registro.
+CREATE TABLE IF NOT EXISTS viagem_estado (
+  viagem_id     INTEGER PRIMARY KEY REFERENCES viagem(id) ON DELETE CASCADE,
+  atraso_min    INTEGER NOT NULL DEFAULT 0,
+  cancelada     INTEGER NOT NULL DEFAULT 0 CHECK (cancelada IN (0,1)),
+  atualizada_em INTEGER NOT NULL
+);

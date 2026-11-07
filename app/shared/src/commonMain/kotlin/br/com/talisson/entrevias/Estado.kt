@@ -9,6 +9,8 @@ import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.Empresa
 import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.EtapaDoTrecho
+import br.com.talisson.entrevias.domain.ViagemAtiva
 import br.com.talisson.entrevias.domain.StatusPedido
 import br.com.talisson.entrevias.domain.StatusPagamento
 import br.com.talisson.entrevias.domain.RegrasDePreco
@@ -54,7 +56,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS,
-    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS }
+    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -513,7 +515,7 @@ class Estado(
     var historicoCarga by mutableStateOf<Carga>(Carga.Pronto)
     var pedidoAberto by mutableStateOf<Pedido?>(null)
 
-    fun abrirHistorico() { limparMensagensDaCompra(); ir(Tela.HISTORICO); carregarHistorico() }
+    fun abrirHistorico() { limparMensagensDaCompra(); ir(Tela.HISTORICO); carregarHistorico(); carregarAtivas() }
 
     fun carregarHistorico(filtro: String? = filtroHistorico) {
         val t = token ?: return
@@ -540,6 +542,29 @@ class Estado(
         runCatching { armazenamento.gravar(CHAVE_BILHETES, kotlinx.serialization.json.Json.encodeToString(bilhetesGuardados.toList())) }
     }
     fun apagarBilhetesGuardados() { bilhetesGuardados.clear(); runCatching { armazenamento.gravar(CHAVE_BILHETES, null) } }
+
+    // D5: viagem em andamento. Sem internet, usa os bilhetes guardados no aparelho e o relógio do aparelho.
+    val ativas = mutableStateListOf<ViagemAtiva>()
+    var ativasOffline by mutableStateOf(false)
+
+    fun carregarAtivas() {
+        val t = token ?: return
+        escopo.launch {
+            when (val x = api.viagensAtivas(t)) {
+                is Resp.Ok -> { ativasOffline = false; ativas.clear(); ativas.addAll(x.valor) }
+                is Resp.Falha -> {
+                    if (x.status == 401) { sessaoExpirou(); return@launch }
+                    if (x.status == 0) {
+                        val agora = kotlin.time.Clock.System.now().epochSeconds
+                        val locais = bilhetesGuardados.filter { p -> p.status == StatusPedido.PAGO && p.trechos.maxOf { it.chegadaReal } > agora }.sortedBy { it.saidaEm }
+                        ativasOffline = true; ativas.clear(); ativas.addAll(locais.map { ViagemAtiva(it, EtapaDoTrecho.de(it, agora), agora) })
+                    }
+                }
+            }
+        }
+    }
+
+    fun abrirEmAndamento() { ir(Tela.EM_ANDAMENTO); carregarAtivas() }
 
     // D3: cancelamento
     var previa by mutableStateOf<CancelamentoPrevia?>(null)
@@ -578,7 +603,7 @@ class Estado(
     /** Nada de uma pessoa sobra para a próxima no mesmo aparelho: carrinho, histórico, avisos e bilhetes guardados. */
     private fun limparDadosDaCompra() {
         pedido = null; pagamento = null; compraRota = null; compraPendente = false; paxSelecionados.clear(); escolhas.clear(); mapa = null
-        historico.clear(); pedidoAberto = null; previa = null; avisos.clear(); apagarBilhetesGuardados()
+        historico.clear(); pedidoAberto = null; previa = null; avisos.clear(); ativas.clear(); apagarBilhetesGuardados()
     }
 
     private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }

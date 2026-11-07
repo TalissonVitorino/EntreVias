@@ -27,6 +27,7 @@ class ComprasRotasTest {
     @BeforeTest fun preparar() {
         BancoDeTeste.pronto; Contas.iteracoes = 1_000; Contas.agora = { hoje }; Email.emProducao = false
         simples = candidatas[proxima.getAndIncrement() % candidatas.size]
+        reservadasNoInicio = reservasDe(simples.id, par.first.id, par.second.id)
         val folga = { LimiteDeTaxa(1_000_000, 3600) }
         Limites.cadastro = folga(); Limites.cadastroGlobal = folga(); Limites.pedidoPorUsuario = folga(); Limites.cupomPorUsuario = folga()
     }
@@ -54,7 +55,13 @@ class ComprasRotasTest {
     private val par = viagens.firstNotNullOf { a -> viagens.firstOrNull { b -> b.origem == a.destino && b.destino != a.origem && b.saidaMin - a.chegadaMin in 30..480 }?.let { a to it } }
 
     /** i-ésima poltrona livre (nem simulada como ocupada, nem PcD) da viagem; i começa em 0. */
-    private fun livre(i: Int, v: Int = simples.id) = (1..40).filter { it !in Compras.ocupadasSimuladas(v) && it !in listOf(1, 5) }[i]
+    private fun livre(i: Int, v: Int = simples.id) = (1..40).filter { it !in Compras.ocupadasSimuladas(v) && it !in listOf(1, 5) && it !in reservadasNoInicio[v].orEmpty() }[i]
+
+    /** Poltronas já reservadas por OUTRAS classes de teste (o banco é um só) quando este teste começou: `livre()` as evita e continua estável. */
+    private var reservadasNoInicio: Map<Int, Set<Int>> = emptyMap()
+    private fun reservasDe(vararg ids: Int) = ids.associateWith { v ->
+        Banco.conexao().use { c -> c.prepareStatement("select numero from reserva_assento where viagem_id = ?").use { it.setInt(1, v); it.executeQuery().use { rs -> buildSet { while (rs.next()) add(rs.getInt(1)) } } } }
+    }
 
     private fun comApp(bloco: suspend ApplicationTestBuilder.() -> Unit) = testApplication { application { module() }; bloco() }
 

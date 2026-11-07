@@ -5,6 +5,7 @@ import br.com.talisson.entrevias.domain.CancelamentoPedido
 import br.com.talisson.entrevias.domain.CupomPedido
 import br.com.talisson.entrevias.domain.EscolhasPedido
 import br.com.talisson.entrevias.domain.NovoPedido
+import br.com.talisson.entrevias.domain.OcorrenciaPedido
 import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -108,4 +109,15 @@ fun Route.rotasDeCompra() {
         val u = call.exigeLogin() ?: return@post
         Notificacoes.marcarLidas(u.id); call.respond(AvisoApi("Marcadas como lidas."))
     }
+
+    // D4: o gestor registra o que aconteceu com uma viagem; quem comprou é avisado. Hoje só pela API (sem tela).
+    post("/api/gestor/viagens/{id}/ocorrencia") {
+        call.exigeGestor() ?: return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Viagem não encontrada.")
+        val p = call.corpo<OcorrenciaPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        call.regra { Ocorrencias.registrar(id, p.tipo, p.minutos) }
+    }
+
+    // D5: a viagem em andamento ou as próximas, com a etapa de cada trecho.
+    get("/api/viagens-ativas") { val u = call.exigeLogin() ?: return@get; call.respond(Ocorrencias.ativas(u.id)) }
 }

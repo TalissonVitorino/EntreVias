@@ -56,13 +56,14 @@ object Compras {
             it.setInt(1, pedidoId); it.executeQuery().use { rs -> rs.lista { r -> r.getInt(1) to r.getInt(2) } }
         }.groupBy({ it.first }, { it.second })
         return c.prepareStatement(
-            """select pt.ordem, v.id, e.nome, l.categoria, o.codigo, d.codigo, v.saida_em, v.chegada_em, pt.preco_unit
-               from pedido_trecho pt join viagem v on v.id = pt.viagem_id join linha l on l.id = v.linha_id
+            """select pt.ordem, v.id, e.nome, l.categoria, o.codigo, d.codigo, v.saida_em, v.chegada_em, pt.preco_unit,
+                      coalesce(ve.atraso_min, 0), coalesce(ve.cancelada, 0)
+               from pedido_trecho pt join viagem v on v.id = pt.viagem_id left join viagem_estado ve on ve.viagem_id = v.id join linha l on l.id = v.linha_id
                join empresa e on e.id = l.empresa_id join terminal o on o.id = l.origem_terminal_id join terminal d on d.id = l.destino_terminal_id
                where pt.pedido_id = ? order by pt.ordem""",
         ).use {
             it.setInt(1, pedidoId)
-            it.executeQuery().use { rs -> rs.lista { r -> PedidoTrecho(r.getInt(1), r.getInt(2), r.getString(3), r.getString(4), r.getString(5), r.getString(6), r.getLong(7), r.getLong(8), r.getInt(9), poltronas[r.getInt(2)].orEmpty(), plataforma(r.getInt(2))) } }
+            it.executeQuery().use { rs -> rs.lista { r -> PedidoTrecho(r.getInt(1), r.getInt(2), r.getString(3), r.getString(4), r.getString(5), r.getString(6), r.getLong(7), r.getLong(8), r.getInt(9), poltronas[r.getInt(2)].orEmpty(), plataforma(r.getInt(2)), r.getInt(10), r.getInt(11) == 1) } }
         }
     }
 
@@ -374,5 +375,17 @@ object Compras {
             avisar { Notificacoes.cancelamento(c, id, previa.reembolsoCentavos) }
         }
         return pedido(usuarioId, id)!!
+    }
+
+    /** Cancelamento por iniciativa da empresa (viagem cancelada): reembolso de 100%, sem taxa, sem checar a data. */
+    fun cancelarPelaEmpresa(c: Connection, usuarioId: Int, id: Int) {
+        val total = c.prepareStatement("select total from pedido where id = ? and usuario_id = ? and status = 'pago'").use { it.setInt(1, id); it.setInt(2, usuarioId); it.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else return } }
+        c.autoCommit = false
+        try {
+            c.prepareStatement("update pedido set status = 'cancelado', cancelado_em = ?, reembolso = ?, motivo_cancelamento = 'Viagem cancelada pela empresa' where id = ?").use { it.setLong(1, Contas.agora()); it.setInt(2, total); it.setInt(3, id); it.executeUpdate() }
+            c.prepareStatement("delete from reserva_assento where pedido_id = ?").use { it.setInt(1, id); it.executeUpdate() }
+            c.prepareStatement("delete from bilhete where pedido_id = ?").use { it.setInt(1, id); it.executeUpdate() }
+            c.commit(); c.autoCommit = true
+        } catch (e: Exception) { runCatching { c.rollback() }; c.autoCommit = true; throw e }
     }
 }

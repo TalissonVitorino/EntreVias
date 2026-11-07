@@ -80,7 +80,13 @@ data class PedidoTrecho(
     val ordem: Int, val viagemId: Int, val empresa: String, val categoria: String,
     val origem: String, val destino: String, val saidaEm: Long, val chegadaEm: Long,
     val precoUnitCentavos: Int, val poltronas: List<Int> = emptyList(), val plataforma: Int? = null,
-)
+    /** D4: atraso (ou mudança de horário) que o gestor registrou, em minutos. Negativo = saiu mais cedo. */
+    val atrasoMin: Int = 0,
+    val cancelada: Boolean = false,
+) {
+    val saidaReal get() = saidaEm + atrasoMin * 60L
+    val chegadaReal get() = chegadaEm + atrasoMin * 60L
+}
 
 @Serializable
 data class PedidoPassageiro(val nome: String, val categoria: String, val idade: Int, val documentoFinal: String? = null, val acessibilidade: String? = null)
@@ -105,7 +111,7 @@ data class Pedido(
     val reembolsoCentavos: Int? = null,
     val bilhetes: List<Bilhete> = emptyList(),
 ) {
-    val saidaEm get() = trechos.minOf { it.saidaEm }
+    val saidaEm get() = trechos.minOf { it.saidaReal }
     val poltronasCompletas get() = trechos.all { it.poltronas.size == RegrasDePreco.poltronasNecessarias(passageiros.map { p -> p.categoria }) }
 }
 
@@ -162,3 +168,38 @@ object TipoNotificacao {
 
 @Serializable
 data class Notificacao(val id: Int, val tipo: String, val titulo: String, val texto: String, val pedidoId: Int? = null, val criadaEm: Long, val lida: Boolean = false)
+
+/** D4/D5: o que o gestor pode registrar sobre uma viagem. */
+object TipoOcorrencia {
+    const val ATRASO = "atraso"          // o ônibus está atrasado (chegada e saída adiante)
+    const val HORARIO = "horario"        // o horário foi alterado antes da viagem
+    const val CANCELADA = "cancelada"    // a empresa cancelou: reembolso integral e automático
+    val TODOS = listOf(ATRASO, HORARIO, CANCELADA)
+}
+
+@Serializable
+data class OcorrenciaPedido(val tipo: String, val minutos: Int = 0)
+
+@Serializable
+data class OcorrenciaResultado(val pedidosAfetados: Int, val reembolsados: Int = 0)
+
+/** D5: viagem em andamento ou a próxima, com a etapa de cada trecho calculada pelo servidor (relógio dele, não do aparelho). */
+object EtapaDoTrecho {
+    const val CONCLUIDO = "concluido"
+    const val EM_ANDAMENTO = "em_andamento"
+    const val PROXIMO = "proximo"
+    const val CANCELADO = "cancelado"
+
+    /** A etapa de um trecho num instante, já contando o atraso registrado. Servidor e app (sem internet) usam esta mesma conta. */
+    fun de(t: PedidoTrecho, agora: Long) = when {
+        t.cancelada -> CANCELADO
+        t.chegadaReal <= agora -> CONCLUIDO
+        t.saidaReal <= agora -> EM_ANDAMENTO
+        else -> PROXIMO
+    }
+
+    fun de(p: Pedido, agora: Long) = p.trechos.map { de(it, agora) }
+}
+
+@Serializable
+data class ViagemAtiva(val pedido: Pedido, val etapas: List<String>, val agora: Long)

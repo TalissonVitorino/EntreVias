@@ -59,3 +59,30 @@ class CompraTest {
 
     @Test fun poltronasPcDSaoAsDoDesign() = assertEquals(setOf(1, 5), RegrasDePreco.POLTRONAS_PCD)
 }
+
+class EtapaDoTrechoTest {
+    private fun t(saida: Long, chegada: Long, atraso: Int = 0, cancelada: Boolean = false) =
+        PedidoTrecho(1, 1, "E", "Convencional", "A", "B", saida, chegada, 1000, atrasoMin = atraso, cancelada = cancelada)
+
+    @Test fun proximoEmAndamentoEConcluidoNosLimitesExatos() {
+        val x = t(1000, 2000)
+        assertEquals("proximo", EtapaDoTrecho.de(x, 999)); assertEquals("em_andamento", EtapaDoTrecho.de(x, 1000))
+        assertEquals("em_andamento", EtapaDoTrecho.de(x, 1999)); assertEquals("concluido", EtapaDoTrecho.de(x, 2000))
+    }
+
+    @Test fun atrasoDeslocaSaidaEChegada() {
+        val x = t(1000, 2000, atraso = 10)   // 10 min = 600 s
+        assertEquals("proximo", EtapaDoTrecho.de(x, 1500)); assertEquals("em_andamento", EtapaDoTrecho.de(x, 1600)); assertEquals("em_andamento", EtapaDoTrecho.de(x, 2599)); assertEquals("concluido", EtapaDoTrecho.de(x, 2600))
+    }
+
+    @Test fun saidaMaisCedoTambemVale() = assertEquals("em_andamento", EtapaDoTrecho.de(t(1000, 2000, atraso = -5), 800))
+
+    @Test fun trechoCanceladoNuncaEstaEmAndamentoNemConcluido() {
+        assertEquals("cancelado", EtapaDoTrecho.de(t(1000, 2000, cancelada = true), 1500)); assertEquals("cancelado", EtapaDoTrecho.de(t(1000, 2000, cancelada = true), 9999))
+    }
+
+    @Test fun pedidoDevolveUmaEtapaPorTrecho() {
+        val p = Pedido(1, "EV-1", "pago", listOf(t(1000, 2000), t(2500, 3500)), emptyList(), Totais(0, 0, 0, 0))
+        assertEquals(listOf("concluido", "proximo"), EtapaDoTrecho.de(p, 2100))
+    }
+}

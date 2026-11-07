@@ -54,6 +54,7 @@ class CompraEstadoTest {
         rota("/api/pagamentos/2") { ex, _ -> respostaPagamento().let { responde(ex, it.first, it.second) } }
         rota("/api/pedidos/7/cancelamento") { ex, _ -> responde(ex, 200, json.encodeToString(CancelamentoPrevia(23960, 1198, 22762, 5))) }
         rota("/api/pedidos/7/cancelar") { ex, _ -> responde(ex, 200, json.encodeToString(pedidoPago.copy(status = StatusPedido.CANCELADO, reembolsoCentavos = 22762, bilhetes = emptyList()))) }
+        rota("/api/viagens-ativas") { ex, _ -> responde(ex, 200, json.encodeToString(listOf(ViagemAtiva(pedidoPago, listOf("proximo", "proximo"), 1_800_000_000L)))) }
         rota("/api/notificacoes") { ex, _ -> responde(ex, 200, json.encodeToString(listOf(Notificacao(1, "compra", "Compra confirmada", "ok", 7, 1_800_000_000L)))) }
         s.start(); servidor = s
         return "http://127.0.0.1:${s.address.port}"
@@ -204,5 +205,31 @@ class CompraEstadoTest {
         val e = estado(); e.carregarHistorico("proximas"); esperar { e.historico.isNotEmpty() }
         assertEquals("proximas", e.filtroHistorico)
         assertTrue(pedidos.any { it.startsWith("GET /api/pedidos ") })
+    }
+
+    @Test fun viagemEmAndamentoVemDoServidor() {
+        val e = estado(); e.carregarAtivas(); esperar { e.ativas.isNotEmpty() }
+        assertFalse(e.ativasOffline); assertEquals(listOf("proximo", "proximo"), e.ativas.single().etapas)
+    }
+
+    @Test fun semInternetMostraOsBilhetesGuardadosComEtapasDoRelogioDoAparelho() {
+        val futuro = pedidoPago.copy(trechos = pedidoPago.trechos.map { it.copy(saidaEm = 4_000_000_000L, chegadaEm = 4_000_003_600L) })   // ano 2096: sempre por vir
+        val e = estado(); e.guardarBilhetes(futuro)
+        servidor!!.stop(0)   // cai a conexão
+        e.carregarAtivas(); esperar { e.ativas.isNotEmpty() }
+        assertTrue(e.ativasOffline, "avisa que é do aparelho"); assertEquals(listOf("proximo", "proximo"), e.ativas.single().etapas)
+    }
+
+    @Test fun semInternetENadaGuardadoNaoInventaViagem() {
+        val e = estado(); servidor!!.stop(0)
+        e.carregarAtivas(); Thread.sleep(500)
+        assertTrue(e.ativas.isEmpty())
+    }
+
+    @Test fun viagemJaTerminadaNaoApareceOffline() {
+        val passada = pedidoPago.copy(trechos = pedidoPago.trechos.map { it.copy(saidaEm = 1_000_000_000L, chegadaEm = 1_000_003_600L) })
+        val e = estado(); e.guardarBilhetes(passada); servidor!!.stop(0)
+        e.carregarAtivas(); Thread.sleep(500)
+        assertTrue(e.ativas.isEmpty())
     }
 }

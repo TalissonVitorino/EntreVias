@@ -39,3 +39,6 @@ object Notificacoes {
         c.prepareStatement("update aviso set lida = 1 where usuario_id = ? and lida = 0").use { it.setInt(1, usuarioId); it.executeUpdate() }
     }
 }
+
+/** Hora de Brasília (UTC−3) de um instante em segundos, como "06:30". */
+fun horaBr(epochSeg: Long): String = java.time.LocalTime.ofSecondOfDay(Math.floorMod(epochSeg - 3 * 3600L, 86_400L)).let { "%02d:%02d".format(it.hour, it.minute) }
