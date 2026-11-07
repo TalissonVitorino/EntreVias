@@ -113,11 +113,6 @@ fun TelaEntrar(e: Estado) {
 @Composable
 fun TelaCadastro(e: Estado) {
     val c = cores()
-    var nome by remember { mutableStateOf("") }
-    var email by remember { mutableStateOf("") }
-    var celular by remember { mutableStateOf("") }
-    var senha by remember { mutableStateOf("") }
-    var aceita by remember { mutableStateOf(false) }   // nunca pré-marcado
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column {
             Eyebrow("Criar conta")
@@ -127,18 +122,22 @@ fun TelaCadastro(e: Estado) {
             T("Para comprar e guardar seus bilhetes. Buscar rotas continua sem conta.", 15, cor = c.muted)
         }
         Cartao {
-            CampoTexto("Nome completo", nome, { nome = it })
-            CampoTexto("E-mail", email, { email = it }, dica = "voce@email.com", teclado = KeyboardType.Email)
-            CampoTexto("Celular (opcional)", celular, { celular = it }, dica = "(41) 99999-0000", teclado = KeyboardType.Phone)
-            CampoTexto("Senha (mínimo 8 caracteres)", senha, { senha = it }, senha = true)
+            CampoTexto("Nome completo", e.cadNome, { e.cadNome = it })
+            CampoTexto("E-mail", e.cadEmail, { e.cadEmail = it }, dica = "voce@email.com", teclado = KeyboardType.Email)
+            CampoTexto("Celular (opcional)", e.cadCelular, { e.cadCelular = it }, dica = "(41) 99999-0000", teclado = KeyboardType.Phone)
+            CampoTexto("Senha (mínimo 8 caracteres)", e.cadSenha, { e.cadSenha = it }, senha = true)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Chave(aceita) { aceita = it }
-                T("Li e aceito os Termos de uso e a Política de privacidade (LGPD).", 14, cor = c.muted, mod = Modifier.weight(1f))
+                Chave(e.cadAceita) { e.cadAceita = it }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    T("Li e aceito:", 14, cor = c.muted)
+                    Link("Termos de uso  ›") { e.abrirDocumento(Documento.TERMOS) }
+                    Link("Política de privacidade  ›") { e.abrirDocumento(Documento.PRIVACIDADE) }
+                }
             }
             Mensagens(e)
             Botao(
                 if (e.contaOcupada) "Criando…" else "Criar conta",
-                { e.cadastrar(CadastroPedido(nome, email, celular.ifBlank { null }, senha, aceita)) },
+                { e.cadastrar(CadastroPedido(e.cadNome, e.cadEmail, e.cadCelular.ifBlank { null }, e.cadSenha, e.cadAceita)) },
                 Modifier.fillMaxWidth(), primario = true, grande = true,
             )
         }
@@ -146,6 +145,31 @@ fun TelaCadastro(e: Estado) {
             T("Já tem conta?", 15, cor = c.muted)
             Link("Entrar") { e.limparMensagensDeConta(); e.ir(Tela.ENTRAR) }
         }
+    }
+}
+
+// ---------------------------------------------------------------- TERMOS E PRIVACIDADE (RQ11)
+@Composable
+fun TelaTermos(e: Estado) {
+    val c = cores()
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Link("‹  Voltar ao cadastro") { e.ir(Tela.CADASTRO) }
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Documento.entries.forEach { d -> Botao(d.titulo, { e.documento = d }, ativo = e.documento == d, pequeno = true) }
+        }
+        Column {
+            Eyebrow(TextosLegais.VERSAO)
+            Spacer(Modifier.height(8.dp))
+            T(e.documento.titulo, 30, FontWeight.Bold, ls = -0.9f)
+        }
+        Aviso("Rascunho", listOf(TextosLegais.AVISO))
+        TextosLegais.secoes(e.documento).forEach { s ->
+            Cartao(raio = 24, pad = 20, borda = true) {
+                T(s.titulo, 18, FontWeight.Bold, ls = -0.3f)
+                s.paragrafos.forEach { T(it, 15, cor = c.muted, lh = 22) }
+            }
+        }
+        Botao("Voltar ao cadastro", { e.ir(Tela.CADASTRO) }, Modifier.fillMaxWidth(), primario = true)
     }
 }
 
