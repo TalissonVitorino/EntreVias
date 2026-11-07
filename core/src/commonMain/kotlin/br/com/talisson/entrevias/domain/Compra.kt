@@ -112,6 +112,8 @@ data class Pedido(
     val canceladoEm: Long? = null,
     val reembolsoCentavos: Int? = null,
     val bilhetes: List<Bilhete> = emptyList(),
+    /** O relógio do SERVIDOR no momento da resposta. Prazos (reserva, Pix) são dele; o app conta a partir daqui, nunca do relógio do aparelho. */
+    val agora: Long = 0,
 ) {
     val saidaEm get() = trechos.minOf { it.saidaReal }
     val ehIdaEVolta get() = trechos.any { it.volta }
@@ -149,6 +151,8 @@ object StatusPagamento {
 data class Pagamento(
     val id: Int, val pedidoId: Int, val metodo: String, val status: String,
     val codigoPix: String? = null, val expiraEm: Long? = null, val motivo: String? = null, val parcelas: Int = 1,
+    /** O relógio do servidor no momento da resposta (ver [Pedido.agora]). */
+    val agora: Long = 0,
 )
 
 @Serializable

@@ -138,4 +138,4 @@ fun TelaAvaliar(e: Estado) {
 }
 
 /** Só para mostrar ou esconder o botão "Avaliar": quem decide de verdade se já dá para avaliar é o servidor. */
-fun jaChegou(chegadaRealSeg: Long) = chegadaRealSeg <= Clock.System.now().epochSeconds
+fun jaChegou(chegadaRealSeg: Long, agoraDoServidor: Long = 0) = chegadaRealSeg <= (if (agoraDoServidor > 0) agoraDoServidor else Clock.System.now().epochSeconds)

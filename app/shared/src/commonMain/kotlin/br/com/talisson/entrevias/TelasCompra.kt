@@ -40,6 +40,9 @@ import kotlin.time.Clock
 /** Segundos desde 1970 no relógio do aparelho. Só para contagens regressivas; quem decide o prazo é sempre o servidor. */
 private fun agoraSeg() = Clock.System.now().epochSeconds
 
+/** Segundos que faltam para `expiraEm` (do servidor), dado o relógio do servidor na resposta e o tempo decorrido no aparelho desde então. */
+internal fun restanteSeg(expiraEm: Long, agoraDoServidor: Long, decorridoNoAparelho: Long) = expiraEm - (agoraDoServidor + decorridoNoAparelho)
+
 @Composable
 private fun MensagensCompra(e: Estado) {
     val c = cores()
@@ -69,14 +72,19 @@ private fun SemPedido(e: Estado) {
 
 private fun Estado.trechoTxt(origem: String, destino: String) = "${cidade(origem)} → ${cidade(destino)}"
 
-/** Contagem regressiva até `expiraEm` (segundos do servidor). Quando zera, avisa e chama `aoVencer`. */
+/**
+ * Contagem regressiva até `expiraEm`, que é um horário do SERVIDOR. O relógio do aparelho pode estar adiantado ou atrasado
+ * (dias, até), então a conta parte do `agoraDoServidor` que veio na mesma resposta e só usa o aparelho para medir o tempo
+ * que passou desde então. Quando zera, avisa e chama `aoVencer`.
+ */
 @Composable
-private fun Contagem(rotulo: String, expiraEm: Long?, aoVencer: () -> Unit) {
+private fun Contagem(rotulo: String, expiraEm: Long?, agoraDoServidor: Long, aoVencer: () -> Unit) {
     val c = cores()
     if (expiraEm == null) return
-    var agora by remember { mutableStateOf(agoraSeg()) }
-    LaunchedEffect(expiraEm) { while (true) { agora = agoraSeg(); delay(1000) } }
-    val resta = expiraEm - agora
+    val inicio = remember(expiraEm, agoraDoServidor) { agoraSeg() }
+    var decorrido by remember(expiraEm, agoraDoServidor) { mutableStateOf(0L) }
+    LaunchedEffect(expiraEm, agoraDoServidor) { while (true) { decorrido = agoraSeg() - inicio; delay(1000) } }
+    val resta = restanteSeg(expiraEm, agoraDoServidor, decorrido)
     if (resta > 0) T("⏱  $rotulo ${Tempo.contagem(resta)}", 14, FontWeight.SemiBold, if (resta < 120) c.erro else c.primary)
     else {
         T("A reserva das poltronas venceu. Escolha de novo.", 14, FontWeight.SemiBold, c.erro)
@@ -249,7 +257,7 @@ fun TelaPagamento(e: Estado) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Link("‹  Voltar às poltronas") { e.abrirPoltronas() }
         CabecalhoCompra("Passo 3 de 4", "Como você quer pagar?", "Total ${centavosParaReais(total)} · ${ped.trechos.size} ${if (ped.trechos.size == 1) "trecho" else "trechos"}")
-        Contagem("Poltronas reservadas por", ped.reservaExpiraEm) { e.abrirPoltronas() }
+        Contagem("Poltronas reservadas por", ped.reservaExpiraEm, ped.agora) { e.abrirPoltronas() }
         e.pagamentoModo?.let { if (it["simulado"] == true) Aviso("Pagamento simulado", listOf("Nenhuma cobrança de verdade acontece nesta versão.", "Cartão terminado em 0002 é recusado, para você testar a recusa.")) }
         OpcaoPagamento("Pix", "Aprovação na hora (demonstração)", escolha == "pix") { escolha = "pix"; erroLocal = null }
         cartoes.forEach { f -> OpcaoPagamento(f.rotulo, "vence ${f.validade}", escolha == "f${f.id}") { escolha = "f${f.id}"; erroLocal = null } }
@@ -331,7 +339,7 @@ fun TelaPix(e: Estado) {
         } else {
             e.pagamentoModo?.let { if (it["simulado"] == true) Aviso("Pix simulado", listOf("Este código não é um Pix de verdade: nenhum banco o reconhece.", "Use o botão de demonstração abaixo para aprovar.")) }
             Cartao {
-                Contagem("Expira em", g.expiraEm) { e.abrirPoltronas() }
+                Contagem("Expira em", g.expiraEm, g.agora) { e.abrirPoltronas() }
                 T("Pix copia e cola", 14, FontWeight.Medium, c.muted)
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.field).padding(14.dp)) { T(g.codigoPix.orEmpty(), 14, FontWeight.Medium, mod = Modifier.fillMaxWidth()) }
                 Botao(if (copiado) "✓ Código copiado" else "Copiar código Pix", { clip.setText(AnnotatedString(g.codigoPix.orEmpty())); copiado = true }, Modifier.fillMaxWidth(), ativo = true)
@@ -367,7 +375,7 @@ fun TelaResultado(e: Estado) {
             Cartao {
                 T("✕  Pagamento recusado", 28, FontWeight.Bold, c.erro, ls = -0.8f)
                 T(g.motivo ?: "O pagamento não foi aprovado.", 15, cor = c.muted)
-                ped.reservaExpiraEm?.let { Contagem("Suas poltronas continuam guardadas por", it) { e.abrirPoltronas() } }
+                ped.reservaExpiraEm?.let { Contagem("Suas poltronas continuam guardadas por", it, ped.agora) { e.abrirPoltronas() } }
                 Botao("Tentar de novo", { e.ir(Tela.PAGAMENTO) }, Modifier.fillMaxWidth(), primario = true, grande = true)
                 Botao("Pagar com Pix", { e.pagarComPix() }, Modifier.fillMaxWidth())
                 MensagensCompra(e)

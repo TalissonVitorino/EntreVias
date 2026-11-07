@@ -87,7 +87,7 @@ object Compras {
             Totais(rs.getInt("subtotal"), rs.getInt("desconto_categoria"), rs.getInt("cupom_centavos"), rs.getInt("total")),
             rs.getString("cupom"), rs.getLong("criado_em"),
             rs.getLong("pago_em").takeIf { !rs.wasNull() }, rs.getString("metodo"), rs.getLong("reserva_expira_em").takeIf { !rs.wasNull() },
-            rs.getLong("cancelado_em").takeIf { !rs.wasNull() }, rs.getInt("reembolso").takeIf { !rs.wasNull() }, bilhetesDe(c, id),
+            rs.getLong("cancelado_em").takeIf { !rs.wasNull() }, rs.getInt("reembolso").takeIf { !rs.wasNull() }, bilhetesDe(c, id), Contas.agora(),
         )
     }
 
@@ -253,7 +253,7 @@ object Compras {
 
     // ---------- C3 a C6: pagamento (SIMULADO) ----------
 
-    private fun pagamentoDe(rs: ResultSet) = Pagamento(rs.getInt("id"), rs.getInt("pedido_id"), rs.getString("metodo"), rs.getString("status"), rs.getString("codigo_pix"), rs.getLong("expira_em").takeIf { !rs.wasNull() }, rs.getString("motivo"), rs.getInt("parcelas"))
+    private fun pagamentoDe(rs: ResultSet) = Pagamento(rs.getInt("id"), rs.getInt("pedido_id"), rs.getString("metodo"), rs.getString("status"), rs.getString("codigo_pix"), rs.getLong("expira_em").takeIf { !rs.wasNull() }, rs.getString("motivo"), rs.getInt("parcelas"), Contas.agora())
 
     private fun prontoParaPagar(usuarioId: Int, pedidoId: Int): Pedido {
         if (!Psp.disponivel) throw ErroDeCompra(503, "A compra está indisponível no momento.")

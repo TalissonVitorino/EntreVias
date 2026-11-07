@@ -184,7 +184,7 @@ class ComprasRotasTest {
         assertEquals(HttpStatusCode.BadRequest, client.poltronas(p, ped, listOf(0, 41)).status, "fora do mapa")
         assertEquals(HttpStatusCode.OK, client.poltronas(p, ped, listOf(livres[0], livres[1])).status)
         val dep = client.pedido(p, ped.id)
-        assertEquals(hoje + 900, dep.reservaExpiraEm); assertEquals(listOf(livres[0], livres[1]), dep.trechos.single().poltronas); assertTrue(dep.poltronasCompletas)
+        assertEquals(hoje + 900, dep.reservaExpiraEm); assertEquals(hoje, dep.agora, "o servidor informa o relógio dele: o app não pode usar o do aparelho"); assertEquals(listOf(livres[0], livres[1]), dep.trechos.single().poltronas); assertTrue(dep.poltronasCompletas)
     }
 
     @Test fun poltronaOcupadaPorOutraPessoaDa409() = comApp {
@@ -292,7 +292,7 @@ class ComprasRotasTest {
     @Test fun pixPendenteAprovadoPeloBotaoDeDemonstracao() = comApp {
         val p = pessoa(); val ped = client.pronto(p)
         val pg = json.decodeFromString<Pagamento>(client.pix(p, ped).bodyAsText())
-        assertEquals(StatusPagamento.PENDENTE, pg.status); assertEquals(hoje + 600, pg.expiraEm); assertTrue(pg.codigoPix!!.startsWith("EVSIM"), "não é um Pix de verdade")
+        assertEquals(StatusPagamento.PENDENTE, pg.status); assertEquals(hoje + 600, pg.expiraEm); assertEquals(hoje, pg.agora); assertTrue(pg.codigoPix!!.startsWith("EVSIM"), "não é um Pix de verdade")
         assertEquals(StatusPedido.CARRINHO, client.pedido(p, ped.id).status)
         val ok = json.decodeFromString<Pagamento>(client.req(HttpMethod.Post, "/api/pagamentos/${pg.id}/simular", p.token).bodyAsText())
         assertEquals(StatusPagamento.APROVADO, ok.status)
