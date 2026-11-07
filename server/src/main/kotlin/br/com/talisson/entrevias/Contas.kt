@@ -55,6 +55,9 @@ object Contas {
     private fun b64(b: ByteArray) = Base64.getEncoder().withoutPadding().encodeToString(b)
     private fun sha256(s: String) = b64(MessageDigest.getInstance("SHA-256").digest(s.toByteArray()))
 
+    /** Chave do bloqueio de login: hash do e-mail normalizado. */
+    fun chaveDeTentativa(emailNormalizado: String) = sha256(emailNormalizado)
+
     private fun derivar(senha: String, sal: ByteArray, it: Int): ByteArray =
         SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(PBEKeySpec(senha.toCharArray(), sal, it, 256)).encoded
 
@@ -76,7 +79,7 @@ object Contas {
     private val hashFalso by lazy { hashSenha("senha-que-ninguem-tem") }
 
     private fun usuarioDe(rs: java.sql.ResultSet) =
-        Usuario(rs.getInt("id"), rs.getString("nome") ?: "", rs.getString("email"), rs.getString("celular"), rs.getString("papel"))
+        Usuario(rs.getInt("id"), rs.getString("nome") ?: "", rs.getString("email"), rs.getString("celular"), rs.getString("papel"), rs.getInt("verificado") == 1)
 
     private fun novaSessao(c: Connection, u: Usuario): SessaoResposta {
         val token = ByteArray(32).also { aleatorio.nextBytes(it) }.let { Base64.getUrlEncoder().withoutPadding().encodeToString(it) }
@@ -110,13 +113,13 @@ object Contas {
     }
 
     private fun buscar(c: Connection, id: Int): Usuario? =
-        c.prepareStatement("select id, nome, email, celular, papel from usuario where id = ? and excluido_em is null").use {
+        c.prepareStatement("select id, nome, email, celular, papel, (email_verificado_em is not null) as verificado from usuario where id = ? and excluido_em is null").use {
             it.setInt(1, id); it.executeQuery().use { rs -> if (rs.next()) usuarioDe(rs) else null }
         }
 
     fun entrar(emailBruto: String, senha: String): ResultadoEntrada {
         val email = Validacao.normalizarEmail(emailBruto)
-        val chave = sha256(email)
+        val chave = chaveDeTentativa(email)
         return Banco.conexao().use { c ->
             val t = agora()
             val (falhas, bloqueadoAte) = c.prepareStatement("select falhas, bloqueado_ate from tentativa_login where chave = ?").use {
@@ -150,7 +153,7 @@ object Contas {
         if (token.isNullOrBlank() || token.length > 128) return null
         return Banco.conexao().use { c ->
             c.prepareStatement(
-                "select u.id, u.nome, u.email, u.celular, u.papel from sessao s join usuario u on u.id = s.usuario_id " +
+                "select u.id, u.nome, u.email, u.celular, u.papel, (u.email_verificado_em is not null) as verificado from sessao s join usuario u on u.id = s.usuario_id " +
                     "where s.token_hash = ? and s.expira_em > ? and u.excluido_em is null",
             ).use { it.setString(1, sha256(token)); it.setLong(2, agora()); it.executeQuery().use { rs -> if (rs.next()) usuarioDe(rs) else null } }
         }
@@ -190,6 +193,10 @@ object Contas {
                 }
             }
         } else cadastrar(CadastroPedido("Gestor", e, senha = senha, aceitaTermos = true), PAPEL_GESTOR)
+        // O e-mail do gestor vem das variáveis de ambiente: é o operador quem o atesta.
+        Banco.conexao().use { c ->
+            c.prepareStatement("update usuario set email_verificado_em = coalesce(email_verificado_em, ?) where email = ?").use { it.setLong(1, agora()); it.setString(2, e); it.executeUpdate() }
+        }
     }
 
     // ---------- US7: empresas parceiras ----------

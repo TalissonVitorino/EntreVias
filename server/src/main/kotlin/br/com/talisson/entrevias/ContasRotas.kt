@@ -1,6 +1,10 @@
 package br.com.talisson.entrevias
 
+import br.com.talisson.entrevias.domain.Aviso
 import br.com.talisson.entrevias.domain.CadastroPedido
+import br.com.talisson.entrevias.domain.CodigoPedido
+import br.com.talisson.entrevias.domain.EsqueciSenhaPedido
+import br.com.talisson.entrevias.domain.RedefinirSenhaPedido
 import br.com.talisson.entrevias.domain.EmpresaPedido
 import br.com.talisson.entrevias.domain.ErroApi
 import br.com.talisson.entrevias.domain.LoginPedido
@@ -51,7 +55,11 @@ fun Route.rotasDeConta() {
         val p = call.corpo<CadastroPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
         Validacao.cadastro(p)?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
         when (val r = Contas.cadastrar(p)) {
-            is ResultadoCadastro.Ok -> call.respond(HttpStatusCode.Created, r.sessao)
+            is ResultadoCadastro.Ok -> {
+                // RQ10: já manda o código de confirmação. Falha de envio não derruba o cadastro: a pessoa pede de novo depois.
+                if (Email.disponivel) runCatching { Recuperacao.enviarVerificacao(r.sessao.usuario) }
+                call.respond(HttpStatusCode.Created, r.sessao)
+            }
             ResultadoCadastro.Duplicado -> call.erro(HttpStatusCode.Conflict, "Não foi possível criar a conta com esses dados.")
         }
     }
@@ -112,5 +120,62 @@ fun Route.rotasDeConta() {
             ResultadoEmpresa.Duplicada -> call.erro(HttpStatusCode.Conflict, "Já existe uma empresa com esse nome ou CNPJ.")
             ResultadoEmpresa.NaoEncontrada -> call.erro(HttpStatusCode.NotFound, "Empresa não encontrada.")
         }
+    }
+
+    // ---------- RQ9 / RQ10: e-mail (hoje SIMULADO, ver docs/SIMULADOS.md) ----------
+
+    get("/api/email/estado") { call.respond(Email.estado()) }
+
+    /** Limite por cliente e global; devolve `false` (já respondendo 429) se estourou. */
+    suspend fun ApplicationCall.dentroDoLimiteDeRecuperacao(): Boolean {
+        val espera = Limites.recuperacao.tentar(chaveDoCliente()) ?: Limites.recuperacaoGlobal.tentar("*")
+        if (espera == null) return true
+        response.header(HttpHeaders.RetryAfter, espera.toString())
+        erro(HttpStatusCode.TooManyRequests, "Muitas tentativas. Tente de novo mais tarde.")
+        return false
+    }
+
+    // Sempre 202 com o mesmo texto, exista a conta ou não (não revela quais e-mails têm conta).
+    post("/api/senha/esqueci") {
+        if (!Email.disponivel) return@post call.erro(HttpStatusCode.ServiceUnavailable, "A recuperação de senha está indisponível no momento.")
+        if (!call.dentroDoLimiteDeRecuperacao()) return@post
+        val p = call.corpo<EsqueciSenhaPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        Validacao.email(p.email)?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
+        Recuperacao.pedirCodigoDeSenha(p.email)
+        call.respond(HttpStatusCode.Accepted, Aviso("Se esse e-mail tiver conta, enviamos um código. Ele vale por 15 minutos."))
+    }
+
+    post("/api/senha/redefinir") {
+        if (!Email.disponivel) return@post call.erro(HttpStatusCode.ServiceUnavailable, "A recuperação de senha está indisponível no momento.")
+        if (!call.dentroDoLimiteDeRecuperacao()) return@post
+        val p = call.corpo<RedefinirSenhaPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        (Validacao.email(p.email) ?: Validacao.codigo(p.codigo) ?: Validacao.senha(p.novaSenha))?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
+        if (!Recuperacao.redefinirSenha(p.email, p.codigo, p.novaSenha)) return@post call.erro(HttpStatusCode.BadRequest, "Código inválido ou vencido. Peça um novo.")
+        call.respond(HttpStatusCode.NoContent)
+    }
+
+    post("/api/verificacao/enviar") {
+        val u = call.exigeLogin() ?: return@post
+        if (!Email.disponivel) return@post call.erro(HttpStatusCode.ServiceUnavailable, "A confirmação de e-mail está indisponível no momento.")
+        if (!Recuperacao.enviarVerificacao(u)) {
+            call.response.header(HttpHeaders.RetryAfter, "3600")
+            return@post call.erro(HttpStatusCode.TooManyRequests, "Muitas tentativas. Tente de novo mais tarde.")
+        }
+        call.respond(HttpStatusCode.Accepted, Aviso("Enviamos um código para o seu e-mail."))
+    }
+
+    post("/api/verificacao/confirmar") {
+        val u = call.exigeLogin() ?: return@post
+        val p = call.corpo<CodigoPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        Validacao.codigo(p.codigo)?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
+        if (!Recuperacao.confirmarEmail(u.id, p.codigo)) return@post call.erro(HttpStatusCode.BadRequest, "Código inválido ou vencido. Peça um novo.")
+        call.respond(Contas.usuarioDoToken(call.token()) ?: u)
+    }
+
+    // Só em desenvolvimento e só com CAIXA_DE_SAIDA_DEV=true: mostra os e-mails simulados (com códigos de qualquer pessoa).
+    get("/api/dev/caixa-de-saida") {
+        val envio = Email.envio
+        if (!Email.caixaDeSaidaAberta || Email.emProducao || envio !is EnvioSimulado) return@get call.respond(HttpStatusCode.NotFound)
+        call.respond(envio.mensagens().map { mapOf("para" to it.para, "assunto" to it.assunto, "texto" to it.texto) })
     }
 }

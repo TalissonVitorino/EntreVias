@@ -38,18 +38,20 @@ class MigracaoTest {
         assertFalse("papel" in colunas("usuario")); assertFalse("celular" in colunas("usuario"))
         assertFalse("sigla" in colunas("empresa")); assertFalse("cnpj" in colunas("empresa"))
         assertFalse("sessao" in tabelas()); assertFalse("tentativa_login" in tabelas())
+        assertFalse("email_verificado_em" in colunas("usuario")); assertFalse("codigo_verificacao" in tabelas())
     }
 
     @Test fun migraAcrescentandoColunasETabelasSemPerderDados() {
         Banco.migrar(c)
 
-        assertTrue(setOf("celular", "papel", "aceitou_termos_em").all { it in colunas("usuario") })
+        assertTrue(setOf("celular", "papel", "aceitou_termos_em", "email_verificado_em").all { it in colunas("usuario") })
         assertTrue(setOf("sigla", "cnpj").all { it in colunas("empresa") })
-        assertTrue(setOf("sessao", "tentativa_login").all { it in tabelas() })
+        assertTrue(setOf("sessao", "tentativa_login", "codigo_verificacao").all { it in tabelas() })
 
         assertEquals("antigo@teste.com", um("select email from usuario where id = 1"))
         assertEquals("hash-antigo", um("select senha_hash from usuario where id = 1"))
         assertEquals("viajante", um("select papel from usuario where id = 1"), "usuário antigo vira viajante, nunca gestor")
+        assertNull(c.createStatement().use { s -> s.executeQuery("select email_verificado_em from usuario where id = 1").use { it.next(); it.getString(1) } }, "conta antiga começa sem e-mail verificado")
         assertEquals("Empresa Antiga", um("select nome from empresa where id = 1"))
         assertNull(c.createStatement().use { s -> s.executeQuery("select cnpj from empresa where id = 1").use { it.next(); it.getString(1) } })
     }

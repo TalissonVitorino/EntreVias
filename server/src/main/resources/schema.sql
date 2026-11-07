@@ -70,7 +70,17 @@ CREATE TABLE usuario (
   excluido_em         INTEGER,
   celular             TEXT,                    -- US8/US9
   papel               TEXT NOT NULL DEFAULT 'viajante' CHECK (papel IN ('viajante','gestor')),
-  aceitou_termos_em   INTEGER                  -- RQ11
+  aceitou_termos_em   INTEGER,                 -- RQ11
+  email_verificado_em INTEGER                  -- RQ10
+);
+
+CREATE TABLE codigo_verificacao (              -- RQ9/RQ10: um código ativo por pessoa e finalidade; só o hash fica
+  usuario_id   INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  finalidade   TEXT NOT NULL CHECK (finalidade IN ('email','senha')),
+  codigo_hash  TEXT NOT NULL,
+  expira_em    INTEGER NOT NULL,
+  tentativas   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (usuario_id, finalidade)
 );
 
 CREATE TABLE tentativa_login (                 -- RQ12: por hash do e-mail, valendo também para e-mail que não existe

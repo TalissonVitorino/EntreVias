@@ -34,6 +34,12 @@ object Validacao {
         else -> null
     }
 
+    const val CODIGO_TAMANHO = 6
+
+    /** Código de verificação: exatamente 6 dígitos. */
+    fun codigo(c: String): String? =
+        if (c.length == CODIGO_TAMANHO && c.all { it in '0'..'9' }) null else "Informe o código de $CODIGO_TAMANHO dígitos."
+
     fun cadastro(p: CadastroPedido): String? =
         nome(p.nome) ?: email(p.email) ?: celular(p.celular) ?: senha(p.senha)
             ?: if (!p.aceitaTermos) "Para criar a conta, aceite os Termos de uso e a Política de privacidade." else null

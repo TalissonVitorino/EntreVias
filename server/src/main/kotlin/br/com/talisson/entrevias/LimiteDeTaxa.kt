@@ -29,5 +29,10 @@ class LimiteDeTaxa(private val max: Int, private val janelaSeg: Long, private va
 object Limites {
     var cadastro = LimiteDeTaxa(max = 5, janelaSeg = 3600)
     var cadastroGlobal = LimiteDeTaxa(max = 300, janelaSeg = 3600)
+    // Recuperar senha e confirmar e-mail enviam mensagem: freiam spam para terceiros e tentativa de adivinhar o código.
+    var recuperacao = LimiteDeTaxa(max = 10, janelaSeg = 3600)            // por cliente: pedir e redefinir
+    var recuperacaoGlobal = LimiteDeTaxa(max = 200, janelaSeg = 3600)
+    var recuperacaoPorEmail = LimiteDeTaxa(max = 3, janelaSeg = 3600)     // por e-mail alvo: no máximo 3 mensagens por hora
+    var verificacaoPorUsuario = LimiteDeTaxa(max = 3, janelaSeg = 3600)
     var confiarNoProxy = System.getenv("CONFIAR_NO_PROXY") == "true"
 }
