@@ -45,6 +45,7 @@ fun Application.module() {
             val dias = (call.request.queryParameters["dias"]?.toIntOrNull() ?: 3).coerceIn(1, 7)
             call.respond(Banco.viagens(data, dias))
         }
+        get("/api/terminais/infra") { call.respond(Banco.infraDosTerminais()) }
         get("/api/parametros/planob") { call.respond(Banco.parametrosPlanoB()) }
     }
 }

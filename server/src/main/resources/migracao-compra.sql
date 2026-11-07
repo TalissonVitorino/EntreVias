@@ -131,3 +131,17 @@ CREATE TABLE IF NOT EXISTS avaliacao (
   criada_em   INTEGER NOT NULL,
   UNIQUE (pedido_id, trecho)
 );
+
+-- B4: infraestrutura de cada terminal (dados FICTÍCIOS, como o resto da base) e caminhada do desembarque ao embarque.
+CREATE TABLE IF NOT EXISTS terminal_infra (
+  terminal            TEXT PRIMARY KEY,     -- código do terminal (o mesmo id que o app usa)
+  banheiro_acessivel  INTEGER NOT NULL CHECK (banheiro_acessivel IN (0,1)),
+  rampa_elevador      INTEGER NOT NULL CHECK (rampa_elevador IN (0,1)),
+  lanchonete          INTEGER NOT NULL CHECK (lanchonete IN (0,1)),
+  guarda_volumes      INTEGER NOT NULL CHECK (guarda_volumes IN (0,1)),
+  aberto_24h          INTEGER NOT NULL CHECK (aberto_24h IN (0,1)),
+  caminhada_m         INTEGER NOT NULL CHECK (caminhada_m >= 0)
+);
+INSERT OR IGNORE INTO terminal_infra VALUES ('SP',1,1,1,1,1,120), ('CWB',1,1,1,0,0,90), ('JVL',1,0,1,0,0,150), ('FLN',1,1,0,0,0,110),
+  ('RJ',1,1,1,1,1,200), ('BH',1,1,1,1,0,140), ('BSB',1,1,1,0,1,100), ('VIT',0,1,0,0,0,160),
+  ('CAM',1,1,1,0,0,80), ('GYN',1,0,1,1,0,130), ('SSA',1,1,1,0,1,170), ('POA',1,1,1,1,0,120);

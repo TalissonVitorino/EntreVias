@@ -9,6 +9,9 @@ import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.Empresa
 import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.InfraTerminal
+import br.com.talisson.entrevias.domain.FiltroDeRotas
+import br.com.talisson.entrevias.domain.FaixaHorario
 import br.com.talisson.entrevias.domain.ValidacaoAjuda
 import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.NovaAvaliacao
@@ -107,7 +110,20 @@ class Estado(
     var rData by mutableStateOf(DATA_INICIAL)
     var rPax by mutableStateOf(1)
     var ordem by mutableStateOf(Ordem.MAIS_BARATA)
-    val resultado: List<Rota>? get() = todas?.let { MotorDeRotas.ordenar(it, ordem).take(40) }
+    /** B2: filtros dos resultados. Vale só para a busca atual e zera numa busca nova. */
+    var filtro by mutableStateOf(FiltroDeRotas())
+    /** B4: infraestrutura dos terminais. Vazio se o servidor não respondeu (então o filtro de acessibilidade some). */
+    var infra by mutableStateOf<Map<String, InfraTerminal>>(emptyMap())
+    /** Todas as rotas da busca, na ordem escolhida, antes dos filtros (para contar opções e montar os grupos). */
+    val resultadoSemFiltro: List<Rota>? get() = todas?.let { MotorDeRotas.ordenar(it, ordem) }
+    val resultado: List<Rota>? get() = resultadoSemFiltro?.let { filtro.aplicar(it, infra).take(40) }
+
+    fun alternarHorario(f: FaixaHorario) { filtro = filtro.copy(horarios = if (f in filtro.horarios) filtro.horarios - f else filtro.horarios + f) }
+    fun alternarEmpresa(n: String) { filtro = filtro.copy(empresas = if (n in filtro.empresas) filtro.empresas - n else filtro.empresas + n) }
+    fun alternarCategoria(n: String) { filtro = filtro.copy(categorias = if (n in filtro.categorias) filtro.categorias - n else filtro.categorias + n) }
+    fun definirPrecoMax(centavos: Int?) { filtro = filtro.copy(precoMaxCentavos = if (filtro.precoMaxCentavos == centavos) null else centavos) }
+    fun alternarAcessiveis() { filtro = filtro.copy(soTerminaisAcessiveis = !filtro.soTerminaisAcessiveis) }
+    fun limparFiltro() { filtro = FiltroDeRotas() }
 
     var rotaAtual by mutableStateOf<Rota?>(null)
     var salvoAgora by mutableStateOf(false)
@@ -721,6 +737,8 @@ class Estado(
                 paramsRisco = try { api.parametrosRisco() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosRisco() }
                 // servidor sem o endpoint do plano B (versão antiga): valem as regras iniciais do plano
                 paramsPlanoB = try { api.parametrosPlanoB() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosPlanoB() }
+                // infraestrutura dos terminais é um extra: se faltar, só o filtro de acessibilidade e o bloco do terminal somem
+                infra = try { api.infraTerminais().associateBy { it.terminal } } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyMap() }
                 Carga.Pronto
             } catch (t: Throwable) {
                 Carga.Erro("Não foi possível falar com o servidor (${urlBase()}).")
@@ -746,7 +764,7 @@ class Estado(
             try {
                 val v = api.viagens(data, 3)
                 val rotas = MotorDeRotas.buscar(o, d, v, params, limite = 200, partida = 0 until 1440)
-                todas = rotas; rOrigem = o; rDestino = d; rData = data; rPax = pax
+                todas = rotas; rOrigem = o; rDestino = d; rData = data; rPax = pax; filtro = FiltroDeRotas()
                 base = v; baseData = data; baseCarga = Carga.Pronto
                 selecionadas.clear()
                 ir(Tela.RESULTADOS)

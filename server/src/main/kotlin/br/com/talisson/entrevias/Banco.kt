@@ -142,6 +142,15 @@ object Banco {
         }
     }
 
+    /** B4: infraestrutura de cada terminal (dados fictícios). */
+    fun infraDosTerminais(): List<br.com.talisson.entrevias.domain.InfraTerminal> = conexao().use { c ->
+        c.createStatement().use { s ->
+            s.executeQuery("select terminal, banheiro_acessivel, rampa_elevador, lanchonete, guarda_volumes, aberto_24h, caminhada_m from terminal_infra order by terminal").use { rs ->
+                buildList { while (rs.next()) add(br.com.talisson.entrevias.domain.InfraTerminal(rs.getString(1), rs.getInt(2) == 1, rs.getInt(3) == 1, rs.getInt(4) == 1, rs.getInt(5) == 1, rs.getInt(6) == 1, rs.getInt(7))) }
+            }
+        }
+    }
+
     private fun todosOsParametros(): Map<String, Int> = conexao().use { c ->
         c.createStatement().use { s -> s.executeQuery("select chave, valor from parametro").use { rs -> buildMap { while (rs.next()) put(rs.getString(1), rs.getInt(2)) } } }
     }

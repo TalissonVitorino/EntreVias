@@ -1,6 +1,7 @@
 package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.AvisoApi
+import br.com.talisson.entrevias.domain.InfraTerminal
 import br.com.talisson.entrevias.domain.Avaliacao
 import br.com.talisson.entrevias.domain.Chamado
 import br.com.talisson.entrevias.domain.NovaAvaliacao
@@ -76,6 +77,7 @@ class Api(private val base: String = urlBase()) {
     suspend fun parametrosRisco(): ParametrosRisco = http.get("$base/api/parametros/risco").body()
     suspend fun viagens(data: Data, dias: Int = 3): List<Viagem> =
         http.get("$base/api/viagens") { parameter("data", data.iso()); parameter("dias", dias) }.body()
+    suspend fun infraTerminais(): List<InfraTerminal> = http.get("$base/api/terminais/infra").body()
     suspend fun parametrosPlanoB(): ParametrosPlanoB = http.get("$base/api/parametros/planob").body()
 
     // ---------- conta (US8, US9, US11) e empresas (US7) ----------

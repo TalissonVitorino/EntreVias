@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.talisson.entrevias.domain.Categorias
+import br.com.talisson.entrevias.domain.FaixaHorario
 import br.com.talisson.entrevias.domain.LimiteRoteiros
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.Rota
@@ -181,11 +183,18 @@ fun TelaResultados(e: Estado) {
             Spacer(Modifier.width(12.dp))
             Botao("Editar busca", { e.ir(Tela.BUSCAR) }, pequeno = true)
         }
-        T("Opções completas", 24, FontWeight.Bold, ls = -0.5f)
+        var filtrando by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            T("Opções completas", 24, FontWeight.Bold, ls = -0.5f)
+            Botao(if (e.filtro.ativo) "Filtros (${e.filtro.quantosGrupos})" else "Filtros", { filtrando = !filtrando }, pequeno = true, ativo = e.filtro.ativo || filtrando)
+        }
+        if (filtrando) PainelDeFiltros(e, lista.size) { filtrando = false }
         Segmentos(listOf(Ordem.MAIS_BARATA to "Menor preço", Ordem.MAIS_RAPIDA to "Mais rápida", Ordem.MAIS_CONFORTO to "Mais conforto"), e.ordem) { e.ordem = it }
         T("Duração completa inclui as esperas. Preços somam todos os trechos para o grupo.", 14, cor = c.muted)
         T("${lista.size} ${if (lista.size == 1) "opção demonstrativa" else "opções demonstrativas"} · Ida", 14, cor = c.muted)
-        if (lista.isEmpty()) {
+        if (lista.isEmpty() && e.filtro.ativo) {
+            CaixaVazia("Nenhuma opção com estes filtros", "Há ${e.resultadoSemFiltro?.size ?: 0} opções sem filtro. Afrouxe um filtro para ver mais.", "Limpar filtros") { e.limparFiltro() }
+        } else if (lista.isEmpty()) {
             CaixaVazia("Sem opções para esta busca", "Nenhuma rota encontrada nessa data. Tente outra data ou outras cidades.", "Editar busca") { e.ir(Tela.BUSCAR) }
         } else lista.forEach { CartaoOpcao(e, it) }
         T(TAXAS, 13, cor = c.muted)
@@ -328,6 +337,7 @@ fun TelaRota(e: Estado) {
                     T(e.terminal(v.destino), 14)
                     if (w < r.params.apertadaMin) T("Conexão apertada: abaixo de ${r.params.apertadaMin} min.", 14, cor = c.erro)
                     T("Chegada e próxima saída no mesmo terminal. Tempo de conexão ilustrativo, não validado com a empresa.", 14, cor = c.muted)
+                    InfraDoTerminal(e, v.destino)
                     val cx = risco.conexoes[i]
                     Spacer(Modifier.height(8.dp))
                     SeloRisco(cx.rotulo, cx.nota)
@@ -341,7 +351,7 @@ fun TelaRota(e: Estado) {
                 }
             }
         }
-        Aviso("Antes de continuar", listOf(SEPARADAS, "Esta experiência não reserva assentos nem emite passagens.",
+        Aviso("Antes de continuar", listOf(SEPARADAS, "A compra aqui é simulada: nenhuma cobrança nem passagem de verdade é emitida.",
             "Terminais e horários são ilustrativos. Nenhum tempo de conexão foi validado com transportadoras."))
         Cartao(raio = 22, pad = 18) {
             T("O que este valor inclui", 20, FontWeight.Bold)
@@ -591,4 +601,51 @@ fun TelaPlanejamentos(e: Estado) {
         }
         T("Ficam guardados só neste aparelho (até 10). Se você trocar de aparelho ou limpar os dados do app ou do navegador, eles se perdem.", 13, cor = c.muted)
     }
+}
+
+
+// ---------------------------------------------------------------- B2 FILTROS (US1)
+@Composable
+private fun PainelDeFiltros(e: Estado, quantos: Int, aoFechar: () -> Unit) {
+    val c = cores()
+    val todas = e.resultadoSemFiltro.orEmpty()
+    val empresas = todas.flatMap { r -> r.viagens.map { it.empresa } }.groupingBy { it }.eachCount().toList().sortedBy { it.first }
+    val categorias = todas.flatMap { r -> r.viagens.map { it.categoria } }.groupingBy { it }.eachCount().toList().sortedBy { Categorias.rank(it.first) }
+    val precos = todas.map { it.totalCentavos }.sorted()
+    // 4 degraus de preço entre o menor e o maior total por pessoa (arredondados a R$ 10)
+    val degraus = if (precos.isEmpty()) emptyList() else (1..4).map { i -> ((precos.first() + (precos.last() - precos.first()) * i / 4) / 1000 * 1000).coerceAtLeast(1000) }.distinct()
+    Cartao {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            T("Filtros", 20, FontWeight.Bold, ls = -0.4f)
+            if (e.filtro.ativo) Link("Limpar") { e.limparFiltro() }
+        }
+        T("Horário de partida", 14, FontWeight.Medium, c.muted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FaixaHorario.entries.forEach { f -> Botao(f.rotulo, { e.alternarHorario(f) }, pequeno = true, ativo = f in e.filtro.horarios) } }
+        T("Empresa", 14, FontWeight.Medium, c.muted)
+        empresas.forEach { (n, q) -> Botao("$n ($q)", { e.alternarEmpresa(n) }, Modifier.fillMaxWidth(), pequeno = true, ativo = n in e.filtro.empresas) }
+        T("Tipo de serviço", 14, FontWeight.Medium, c.muted)
+        categorias.forEach { (n, q) -> Botao("$n ($q)", { e.alternarCategoria(n) }, Modifier.fillMaxWidth(), pequeno = true, ativo = n in e.filtro.categorias) }
+        if (degraus.size > 1) {
+            T("Preço por pessoa, até", 14, FontWeight.Medium, c.muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { degraus.forEach { d -> Botao(centavosParaReais(d), { e.definirPrecoMax(d) }, pequeno = true, ativo = e.filtro.precoMaxCentavos == d) } }
+        }
+        if (e.infra.isNotEmpty()) {
+            T("Acessibilidade", 14, FontWeight.Medium, c.muted)
+            Botao("Só terminais acessíveis", { e.alternarAcessiveis() }, Modifier.fillMaxWidth(), pequeno = true, ativo = e.filtro.soTerminaisAcessiveis)
+            T("Terminal acessível: banheiro acessível e rampa ou elevador. Sem informação do terminal, a opção não aparece.", 13, cor = c.muted)
+        }
+        Botao("Ver $quantos ${if (quantos == 1) "resultado" else "resultados"}", aoFechar, Modifier.fillMaxWidth(), primario = true)
+    }
+}
+
+// ---------------------------------------------------------------- B4 CONEXÃO: INFRAESTRUTURA DO TERMINAL (US6)
+@Composable
+private fun InfraDoTerminal(e: Estado, terminal: String) {
+    val c = cores()
+    val i = e.infra[terminal] ?: return
+    Spacer(Modifier.height(8.dp))
+    T("Infraestrutura do terminal de baldeação", 14, FontWeight.SemiBold)
+    listOf("Banheiro acessível" to i.banheiroAcessivel, "Rampa e elevador" to i.rampaElevador, "Lanchonete" to i.lanchonete, "Guarda-volumes" to i.guardaVolumes, "Aberto 24 h" to i.aberto24h)
+        .forEach { (nome, tem) -> T("${if (tem) "✓" else "✕"}  $nome", 14, if (tem) FontWeight.Medium else FontWeight.Normal, if (tem) c.fg else c.muted) }
+    T("Do desembarque ao embarque: cerca de ${i.caminhadaM} m. Dado de demonstração.", 13, cor = c.muted)
 }
