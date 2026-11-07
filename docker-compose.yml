@@ -1,5 +1,9 @@
 # Servidor do EntreVias em Docker. Sobe sozinho ao dar Play no Android Studio (ver server/build.gradle.kts)
 # ou na mão: ./gradlew :server:subirServidor
+# Nome do projeto fixo: sem isto o Compose usa o nome da PASTA, e o container entrevias-servidor
+# (nome fixo) colidiria entre checkouts/worktrees diferentes, cada um com um banco próprio.
+name: entrevias
+
 services:
   servidor:
     container_name: entrevias-servidor
