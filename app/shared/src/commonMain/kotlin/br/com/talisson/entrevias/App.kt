@@ -74,6 +74,10 @@ fun App() {
                         Tela.COMPARAR -> TelaComparar(e)
                         Tela.ROTA -> TelaRota(e)
                         Tela.PLANEJAMENTOS -> TelaPlanejamentos(e)
+                        Tela.CONTA -> TelaConta(e)
+                        Tela.ENTRAR -> TelaEntrar(e)
+                        Tela.CADASTRO -> TelaCadastro(e)
+                        Tela.EMPRESAS -> TelaEmpresas(e)
                     }
                 }
                 if (e.tela == Tela.RESULTADOS && e.selecionadas.isNotEmpty()) {
@@ -96,21 +100,22 @@ fun App() {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
                 Row(Modifier.fillMaxWidth()) {
-                    val naBusca = e.tela != Tela.PLANEJAMENTOS
-                    Column(
-                        Modifier.weight(1f).heightIn(min = 64.dp).clickable { e.ir(Tela.BUSCAR) },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-                    ) {
-                        IconeBuscar(if (naBusca) c.primary else c.fg)
-                        T("Buscar", 14, FontWeight.SemiBold, if (naBusca) c.primary else c.fg)
+                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS)
+                    val nosSalvos = e.tela == Tela.PLANEJAMENTOS
+                    val naBusca = !naConta && !nosSalvos
+                    @Composable
+                    fun Aba(rotulo: String, ativa: Boolean, onClick: () -> Unit, icone: @Composable (androidx.compose.ui.graphics.Color) -> Unit) {
+                        Column(
+                            Modifier.weight(1f).heightIn(min = 64.dp).clickable(onClick = onClick),
+                            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
+                        ) {
+                            icone(if (ativa) c.primary else c.fg)
+                            T(rotulo, 14, FontWeight.SemiBold, if (ativa) c.primary else c.fg)
+                        }
                     }
-                    Column(
-                        Modifier.weight(1f).heightIn(min = 64.dp).clickable { e.ir(Tela.PLANEJAMENTOS) },
-                        horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
-                    ) {
-                        IconeSalvos(if (!naBusca) c.primary else c.fg)
-                        T("Planejamentos", 14, FontWeight.SemiBold, if (!naBusca) c.primary else c.fg)
-                    }
+                    Aba("Buscar", naBusca, { e.ir(Tela.BUSCAR) }) { IconeBuscar(it) }
+                    Aba("Planejamentos", nosSalvos, { e.ir(Tela.PLANEJAMENTOS) }) { IconeSalvos(it) }
+                    Aba("Conta", naConta, { e.limparMensagensDeConta(); e.ir(Tela.CONTA) }) { IconeConta(it) }
                 }
             }
         }

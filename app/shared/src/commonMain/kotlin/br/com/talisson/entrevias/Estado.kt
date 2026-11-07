@@ -5,12 +5,17 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import br.com.talisson.entrevias.domain.AtrasoFicticio
+import br.com.talisson.entrevias.domain.CadastroPedido
+import br.com.talisson.entrevias.domain.Empresa
+import br.com.talisson.entrevias.domain.EmpresaPedido
+import br.com.talisson.entrevias.domain.LoginPedido
 import br.com.talisson.entrevias.domain.LimiteRoteiros
 import br.com.talisson.entrevias.domain.MotorDeRotas
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.ParametrosConexao
 import br.com.talisson.entrevias.domain.ParametrosPlanoB
 import br.com.talisson.entrevias.domain.ParametrosRisco
+import br.com.talisson.entrevias.domain.PerfilPedido
 import br.com.talisson.entrevias.domain.PlanoB
 import br.com.talisson.entrevias.domain.PlanoBConexao
 import br.com.talisson.entrevias.domain.RiscoConexao
@@ -18,12 +23,14 @@ import br.com.talisson.entrevias.domain.RiscoRota
 import br.com.talisson.entrevias.domain.Rota
 import br.com.talisson.entrevias.domain.Salvamento
 import br.com.talisson.entrevias.domain.Terminal
+import br.com.talisson.entrevias.domain.Usuario
+import br.com.talisson.entrevias.domain.Validacao
 import br.com.talisson.entrevias.domain.Viagem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS }
+enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -70,6 +77,102 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
     var concluidos by mutableStateOf(0)
     val selecionadas = mutableStateListOf<String>()
     val planos = mutableStateListOf<Plano>()
+
+    // ---------- conta (US8, US9, US11) e empresas parceiras (US7) ----------
+    // A sessão fica só na memória: ao fechar o app é preciso entrar de novo (armazenamento seguro do token = próxima etapa).
+    private var token: String? = null
+    var usuario by mutableStateOf<Usuario?>(null)
+    var contaOcupada by mutableStateOf(false)
+    var contaErro by mutableStateOf<String?>(null)
+    var contaAviso by mutableStateOf<String?>(null)
+    val empresas = mutableStateListOf<Empresa>()
+    var empresasCarga by mutableStateOf<Carga>(Carga.Pronto)
+
+    fun limparMensagensDeConta() { contaErro = null; contaAviso = null }
+
+    private fun abrirSessao(u: Usuario, t: String) { token = t; usuario = u; limparMensagensDeConta(); ir(Tela.CONTA) }
+
+    fun cadastrar(p: CadastroPedido) {
+        Validacao.cadastro(p)?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.cadastrar(p)) {
+                is Resp.Ok -> abrirSessao(r.valor.usuario, r.valor.token)
+                is Resp.Falha -> contaErro = r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun entrar(email: String, senha: String) {
+        if (Validacao.email(email) != null || senha.isEmpty()) { contaErro = "Informe e-mail e senha."; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.entrar(LoginPedido(email, senha))) {
+                is Resp.Ok -> abrirSessao(r.valor.usuario, r.valor.token)
+                is Resp.Falha -> contaErro =
+                    if (r.status == 429) "Muitas tentativas. Tente de novo em ${minutosTxt(r.esperaSeg)}." else r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun sair() {
+        val t = token
+        token = null; usuario = null; empresas.clear(); limparMensagensDeConta(); ir(Tela.CONTA)
+        if (t != null) escopo.launch { api.sair(t) }
+    }
+
+    fun salvarPerfil(p: PerfilPedido) {
+        val t = token ?: return
+        Validacao.perfil(p)?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.salvarPerfil(t, p)) {
+                is Resp.Ok -> { usuario = r.valor; contaAviso = "Dados salvos." }
+                is Resp.Falha -> { contaErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            contaOcupada = false
+        }
+    }
+
+    private fun sessaoExpirou() { token = null; usuario = null; empresas.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
+
+    fun carregarEmpresas() {
+        val t = token ?: return
+        escopo.launch {
+            empresasCarga = Carga.Carregando
+            when (val r = api.empresas(t)) {
+                is Resp.Ok -> { empresas.clear(); empresas.addAll(r.valor); empresasCarga = Carga.Pronto }
+                is Resp.Falha -> { empresasCarga = Carga.Erro(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    /** Cria (id == null) ou edita uma empresa parceira; devolve o texto de erro pelo [aoTerminar] (`null` = deu certo). */
+    fun salvarEmpresa(id: Int?, p: EmpresaPedido, aoTerminar: (String?) -> Unit) {
+        val t = token ?: return
+        Validacao.empresa(p)?.let { aoTerminar(it); return }
+        escopo.launch {
+            val r = if (id == null) api.criarEmpresa(t, p) else api.atualizarEmpresa(t, id, p)
+            when (r) {
+                is Resp.Ok -> {
+                    val i = empresas.indexOfFirst { it.id == r.valor.id }
+                    if (i >= 0) empresas[i] = r.valor else { empresas.add(r.valor); empresas.sortBy { it.nome } }
+                    aoTerminar(null)
+                }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    private fun minutosTxt(seg: Int?): String {
+        val m = ((seg ?: 900) + 59) / 60
+        return if (m <= 1) "1 minuto" else "$m minutos"
+    }
 
     // plano B (RF20): as regras do servidor e as viagens do dia da rota aberta
     var paramsPlanoB by mutableStateOf(ParametrosPlanoB())
