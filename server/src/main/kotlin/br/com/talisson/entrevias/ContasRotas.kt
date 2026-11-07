@@ -18,27 +18,27 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
-private suspend fun ApplicationCall.erro(status: HttpStatusCode, mensagem: String) = respond(status, ErroApi(mensagem))
+internal suspend fun ApplicationCall.erro(status: HttpStatusCode, mensagem: String) = respond(status, ErroApi(mensagem))
 
-private fun ApplicationCall.token(): String? =
+internal fun ApplicationCall.token(): String? =
     request.headers[HttpHeaders.Authorization]?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")?.trim()
 
 /** Quem fez o pedido, para os limites de taxa. Ver [Limites] sobre o X-Forwarded-For. */
-private fun ApplicationCall.chaveDoCliente(): String {
+internal fun ApplicationCall.chaveDoCliente(): String {
     val direto = request.origin.remoteHost
     if (!Limites.confiarNoProxy) return direto
     return request.headers["X-Forwarded-For"]?.split(',')?.lastOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: direto
 }
 
 /** Corpo JSON inválido ou de outro formato vira `null` (e o chamador responde 400), nunca 500. */
-private suspend inline fun <reified T : Any> ApplicationCall.corpo(): T? = runCatching { receiveNullable<T>() }.getOrNull()
+internal suspend inline fun <reified T : Any> ApplicationCall.corpo(): T? = runCatching { receiveNullable<T>() }.getOrNull()
 
 /** Exige login; sem sessão válida responde 401 e devolve `null`. */
-private suspend fun ApplicationCall.exigeLogin(): Usuario? =
+internal suspend fun ApplicationCall.exigeLogin(): Usuario? =
     Contas.usuarioDoToken(token()) ?: run { erro(HttpStatusCode.Unauthorized, "Entre na sua conta para continuar."); null }
 
 /** Exige o papel de gestor: 401 sem login, 403 para quem não é gestor. */
-private suspend fun ApplicationCall.exigeGestor(): Usuario? {
+internal suspend fun ApplicationCall.exigeGestor(): Usuario? {
     val u = exigeLogin() ?: return null
     if (!u.ehGestor) { erro(HttpStatusCode.Forbidden, "Você não tem acesso a esta área."); return null }
     return u

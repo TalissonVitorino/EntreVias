@@ -82,6 +82,8 @@ fun App() {
                         Tela.ESQUECI_SENHA -> TelaEsqueciSenha(e)
                         Tela.REDEFINIR_SENHA -> TelaRedefinirSenha(e)
                         Tela.VERIFICAR_EMAIL -> TelaVerificarEmail(e)
+                        Tela.PAGAMENTOS -> TelaPagamentos(e)
+                        Tela.PASSAGEIROS -> TelaPassageiros(e)
                     }
                 }
                 if (e.tela == Tela.RESULTADOS && e.selecionadas.isNotEmpty()) {
@@ -104,7 +106,7 @@ fun App() {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
                 Row(Modifier.fillMaxWidth()) {
-                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL)
+                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL, Tela.PAGAMENTOS, Tela.PASSAGEIROS)
                     val nosSalvos = e.tela == Tela.PLANEJAMENTOS
                     val naBusca = !naConta && !nosSalvos
                     @Composable

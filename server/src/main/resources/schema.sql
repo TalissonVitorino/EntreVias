@@ -83,6 +83,31 @@ CREATE TABLE codigo_verificacao (              -- RQ9/RQ10: um código ativo por
   PRIMARY KEY (usuario_id, finalidade)
 );
 
+CREATE TABLE forma_pagamento (                 -- A5: só bandeira, 4 últimos dígitos e validade (LGPD)
+  id          INTEGER PRIMARY KEY,
+  usuario_id  INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  tipo        TEXT NOT NULL CHECK (tipo IN ('cartao','pix')),
+  rotulo      TEXT NOT NULL,
+  bandeira    TEXT,
+  ultimos4    TEXT,
+  validade    TEXT,
+  padrao      INTEGER NOT NULL DEFAULT 0 CHECK (padrao IN (0,1)),
+  criado_em   INTEGER NOT NULL
+);
+CREATE INDEX idx_forma_usuario ON forma_pagamento(usuario_id);
+
+CREATE TABLE passageiro (                      -- A6: quem viaja com a pessoa
+  id              INTEGER PRIMARY KEY,
+  usuario_id      INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  nome            TEXT NOT NULL,
+  relacao         TEXT NOT NULL,
+  idade           INTEGER NOT NULL,
+  documento_final TEXT,
+  acessibilidade  TEXT,
+  criado_em       INTEGER NOT NULL
+);
+CREATE INDEX idx_passageiro_usuario ON passageiro(usuario_id);
+
 CREATE TABLE tentativa_login (                 -- RQ12: por hash do e-mail, valendo também para e-mail que não existe
   chave          TEXT PRIMARY KEY,
   falhas         INTEGER NOT NULL DEFAULT 0,

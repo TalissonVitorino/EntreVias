@@ -1,6 +1,10 @@
 package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.AvisoApi
+import br.com.talisson.entrevias.domain.FormaPagamento
+import br.com.talisson.entrevias.domain.FormaPagamentoPedido
+import br.com.talisson.entrevias.domain.Passageiro
+import br.com.talisson.entrevias.domain.PassageiroPedido
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.CodigoPedido
 import br.com.talisson.entrevias.domain.EsqueciSenhaPedido
@@ -21,6 +25,8 @@ import br.com.talisson.entrevias.domain.Viagem
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -96,4 +102,19 @@ class Api(private val base: String = urlBase()) {
     suspend fun enviarVerificacao(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/verificacao/enviar") { header(HttpHeaders.Authorization, "Bearer $token") } }
     suspend fun confirmarEmail(token: String, codigo: String): Resp<Usuario> =
         chamar { http.post("$base/api/verificacao/confirmar") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(CodigoPedido(codigo)) } }
+
+    // ---------- A5 formas de pagamento e A6 passageiros ----------
+
+    private fun HttpRequestBuilder.auth(token: String) = header(HttpHeaders.Authorization, "Bearer $token")
+    private fun HttpRequestBuilder.json(corpo: Any) { contentType(ContentType.Application.Json); setBody(corpo) }
+
+    suspend fun formas(token: String): Resp<List<FormaPagamento>> = chamar { http.get("$base/api/formas-pagamento") { auth(token) } }
+    suspend fun adicionarForma(token: String, p: FormaPagamentoPedido): Resp<FormaPagamento> = chamar { http.post("$base/api/formas-pagamento") { auth(token); json(p) } }
+    suspend fun tornarPadrao(token: String, id: Int): Resp<List<FormaPagamento>> = chamar { http.put("$base/api/formas-pagamento/$id/padrao") { auth(token) } }
+    suspend fun removerForma(token: String, id: Int): Resp<List<FormaPagamento>> = chamar { http.delete("$base/api/formas-pagamento/$id") { auth(token) } }
+
+    suspend fun passageiros(token: String): Resp<List<Passageiro>> = chamar { http.get("$base/api/passageiros") { auth(token) } }
+    suspend fun adicionarPassageiro(token: String, p: PassageiroPedido): Resp<Passageiro> = chamar { http.post("$base/api/passageiros") { auth(token); json(p) } }
+    suspend fun editarPassageiro(token: String, id: Int, p: PassageiroPedido): Resp<Passageiro> = chamar { http.put("$base/api/passageiros/$id") { auth(token); json(p) } }
+    suspend fun removerPassageiro(token: String, id: Int): Resp<List<Passageiro>> = chamar { http.delete("$base/api/passageiros/$id") { auth(token) } }
 }

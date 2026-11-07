@@ -8,6 +8,13 @@ import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.Empresa
 import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.ValidacaoPerfil
+import br.com.talisson.entrevias.domain.TIPO_PIX
+import br.com.talisson.entrevias.domain.TIPO_CARTAO
+import br.com.talisson.entrevias.domain.PassageiroPedido
+import br.com.talisson.entrevias.domain.Passageiro
+import br.com.talisson.entrevias.domain.FormaPagamentoPedido
+import br.com.talisson.entrevias.domain.FormaPagamento
 import br.com.talisson.entrevias.domain.EmpresaPedido
 import br.com.talisson.entrevias.domain.LoginPedido
 import br.com.talisson.entrevias.domain.LimiteRoteiros
@@ -34,7 +41,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL }
+enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -177,7 +184,7 @@ class Estado(
 
     fun sair() {
         val t = token
-        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
+        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); formas.clear(); passageiros.clear(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
         if (t != null) escopo.launch { api.sair(t) }
     }
 
@@ -263,7 +270,80 @@ class Estado(
         }
     }
 
-    private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
+    // ---------- A5 formas de pagamento e A6 passageiros ----------
+
+    val formas = mutableStateListOf<FormaPagamento>()
+    val passageiros = mutableStateListOf<Passageiro>()
+    var carteiraCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var carteiraErro by mutableStateOf<String?>(null)
+    var carteiraAviso by mutableStateOf<String?>(null)
+    var carteiraOcupada by mutableStateOf(false)
+
+    fun limparMensagensDaCarteira() { carteiraErro = null; carteiraAviso = null }
+
+    /** Roda uma chamada autenticada da carteira: ocupado, erro genérico, sessão vencida (401) volta ao login. */
+    private fun naCarteira(aviso: String? = null, bloco: suspend (String) -> Resp<*>) {
+        val t = token ?: return
+        if (carteiraOcupada) return
+        escopo.launch {
+            carteiraOcupada = true; limparMensagensDaCarteira()
+            when (val r = bloco(t)) {
+                is Resp.Ok<*> -> carteiraAviso = aviso
+                is Resp.Falha -> { carteiraErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            carteiraOcupada = false
+        }
+    }
+
+    fun carregarCarteira() {
+        val t = token ?: return
+        escopo.launch {
+            carteiraCarga = Carga.Carregando
+            val f = api.formas(t); val p = api.passageiros(t)
+            if (f is Resp.Ok) { formas.clear(); formas.addAll(f.valor) }
+            if (p is Resp.Ok) { passageiros.clear(); passageiros.addAll(p.valor) }
+            carteiraCarga = (f as? Resp.Falha ?: p as? Resp.Falha)?.let { Carga.Erro(it.mensagem) } ?: Carga.Pronto
+            if ((f as? Resp.Falha)?.status == 401 || (p as? Resp.Falha)?.status == 401) sessaoExpirou()
+        }
+    }
+
+    /**
+     * O número do cartão é conferido AQUI (soma de Luhn, validade) e só bandeira, 4 últimos dígitos e validade seguem para o
+     * servidor. O número completo e o CVV nunca saem do aparelho.
+     */
+    fun adicionarCartao(numero: String, validade: String, padrao: Boolean) {
+        if (!ValidacaoPerfil.luhn(numero)) { carteiraErro = "Número de cartão inválido. Confira os dígitos."; return }
+        ValidacaoPerfil.validade(validade)?.let { carteiraErro = it; return }
+        if (ValidacaoPerfil.vencido(validade.trim(), DATA_INICIAL.ano, DATA_INICIAL.mes)) { carteiraErro = "Este cartão está vencido."; return }
+        val d = numero.filter { it in '0'..'9' }
+        val pedido = FormaPagamentoPedido(TIPO_CARTAO, ValidacaoPerfil.bandeiraDe(d), d.takeLast(4), validade.trim(), padrao = padrao)
+        naCarteira("Cartão adicionado.") { t -> api.adicionarForma(t, pedido).also { if (it is Resp.Ok) formas.apply { clear(); addAll((api.formas(t) as? Resp.Ok)?.valor ?: emptyList()) } } }
+    }
+
+    fun adicionarPix(tipo: String, finalDaChave: String, padrao: Boolean) {
+        val pedido = FormaPagamentoPedido(TIPO_PIX, pixTipo = tipo, pixFinal = finalDaChave.trim(), padrao = padrao)
+        ValidacaoPerfil.forma(pedido)?.let { carteiraErro = it; return }
+        naCarteira("Pix adicionado.") { t -> api.adicionarForma(t, pedido).also { if (it is Resp.Ok) formas.apply { clear(); addAll((api.formas(t) as? Resp.Ok)?.valor ?: emptyList()) } } }
+    }
+
+    fun tornarPadrao(f: FormaPagamento) = naCarteira("Forma de pagamento padrão atualizada.") { t -> api.tornarPadrao(t, f.id).also { if (it is Resp.Ok) formas.apply { clear(); addAll(it.valor) } } }
+    fun removerForma(f: FormaPagamento) = naCarteira("Forma de pagamento removida.") { t -> api.removerForma(t, f.id).also { if (it is Resp.Ok) formas.apply { clear(); addAll(it.valor) } } }
+
+    fun salvarPassageiro(id: Int?, p: PassageiroPedido, aoTerminar: (String?) -> Unit) {
+        ValidacaoPerfil.passageiro(p)?.let { aoTerminar(it); return }
+        val t = token ?: return
+        escopo.launch {
+            val r = if (id == null) api.adicionarPassageiro(t, p) else api.editarPassageiro(t, id, p)
+            when (r) {
+                is Resp.Ok -> { (api.passageiros(t) as? Resp.Ok)?.let { passageiros.clear(); passageiros.addAll(it.valor) }; aoTerminar(null) }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun removerPassageiro(p: Passageiro) = naCarteira("Passageiro removido.") { t -> api.removerPassageiro(t, p.id).also { if (it is Resp.Ok) passageiros.apply { clear(); addAll(it.valor) } } }
+
+    private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); formas.clear(); passageiros.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
 
     fun carregarEmpresas() {
         val t = token ?: return

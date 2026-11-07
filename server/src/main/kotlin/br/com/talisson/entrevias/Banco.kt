@@ -73,6 +73,10 @@ object Banco {
             it.execute("create unique index if not exists empresa_cnpj on empresa(cnpj) where cnpj is not null")
             it.execute("create table if not exists sessao (token_hash TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, criada_em INTEGER NOT NULL, expira_em INTEGER NOT NULL)")
             it.execute("create table if not exists codigo_verificacao (usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, finalidade TEXT NOT NULL CHECK (finalidade IN ('email','senha')), codigo_hash TEXT NOT NULL, expira_em INTEGER NOT NULL, tentativas INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (usuario_id, finalidade))")
+            it.execute("create table if not exists forma_pagamento (id INTEGER PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, tipo TEXT NOT NULL CHECK (tipo IN ('cartao','pix')), rotulo TEXT NOT NULL, bandeira TEXT, ultimos4 TEXT, validade TEXT, padrao INTEGER NOT NULL DEFAULT 0 CHECK (padrao IN (0,1)), criado_em INTEGER NOT NULL)")
+            it.execute("create index if not exists idx_forma_usuario on forma_pagamento(usuario_id)")
+            it.execute("create table if not exists passageiro (id INTEGER PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, nome TEXT NOT NULL, relacao TEXT NOT NULL, idade INTEGER NOT NULL, documento_final TEXT, acessibilidade TEXT, criado_em INTEGER NOT NULL)")
+            it.execute("create index if not exists idx_passageiro_usuario on passageiro(usuario_id)")
             it.execute("create table if not exists tentativa_login (chave TEXT PRIMARY KEY, falhas INTEGER NOT NULL DEFAULT 0, bloqueado_ate INTEGER)")
         }
     }

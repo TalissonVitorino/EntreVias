@@ -83,6 +83,11 @@ fun TelaConta(e: Estado) {
             Mensagens(e)
             Botao(if (e.contaOcupada) "Salvando…" else "Salvar", { e.salvarPerfil(PerfilPedido(nome, celular)) }, Modifier.fillMaxWidth(), primario = true)
         }
+        Cartao {
+            T("Viagens", 20, FontWeight.Bold, ls = -0.4f)
+            Botao("Formas de pagamento", { e.limparMensagensDaCarteira(); e.ir(Tela.PAGAMENTOS) }, Modifier.fillMaxWidth())
+            Botao("Passageiros", { e.limparMensagensDaCarteira(); e.ir(Tela.PASSAGEIROS) }, Modifier.fillMaxWidth())
+        }
         if (u.ehGestor) Cartao {
             T("Gestão", 20, FontWeight.Bold, ls = -0.4f)
             T("Empresas parceiras que aparecem nas buscas.", 14, cor = c.muted)
