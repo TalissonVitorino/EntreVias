@@ -66,6 +66,17 @@ If you face any issues, please report them on [YouTrack](https://youtrack.jetbra
 
 O que é simulado, e como trocar por produção: [docs/SIMULADOS.md](docs/SIMULADOS.md).
 
+### Ferramentas do gestor (só pela API, ainda sem tela)
+
+Entre como gestor (`POST /api/login`) e use o token em `Authorization: Bearer <token>`:
+
+| Para quê | Chamada |
+|---|---|
+| Registrar atraso, horário alterado ou cancelamento de uma viagem | `POST /api/gestor/viagens/{id}/ocorrencia` com `{"tipo":"atraso","minutos":25}` (`atraso`, `horario` ou `cancelada`) |
+| Ver os pedidos de ajuda | `GET /api/gestor/chamados` |
+| Responder um pedido de ajuda | `POST /api/gestor/chamados/{id}/resposta` com `{"texto":"..."}` |
+| Ver as reclamações | `GET /api/gestor/reclamacoes` |
+
 ### Servidor no Docker
 
 O servidor roda em um container (`entrevias-servidor`, porta 8080), e não mais preso a um terminal ou ao IntelliJ.
