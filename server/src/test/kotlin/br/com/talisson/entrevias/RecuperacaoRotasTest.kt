@@ -93,7 +93,7 @@ class RecuperacaoRotasTest {
         repeat(3) { client.entrar(e, "errada-errada") }   // bloqueia o login
         assertEquals(HttpStatusCode.TooManyRequests, client.entrar(e, "senha-antiga-1").status)
         caixa.limpar(); client.esqueci(e)
-        assertEquals(HttpStatusCode.NoContent, client.redefinir(e, ultimoCodigo(e)).status)
+        assertEquals(HttpStatusCode.OK, client.redefinir(e, ultimoCodigo(e)).status)
 
         assertEquals(HttpStatusCode.OK, client.entrar(e, "senha-nova-22").status, "a senha nova entra (e o bloqueio foi zerado)")
         assertEquals(HttpStatusCode.Unauthorized, client.entrar(e, "senha-antiga-1").status, "a senha antiga não entra mais")
@@ -103,7 +103,7 @@ class RecuperacaoRotasTest {
     @Test fun codigoNaoValeDuasVezes() = comApp {
         val e = email(); client.cadastrar(e); caixa.limpar(); client.esqueci(e)
         val c = ultimoCodigo(e)
-        assertEquals(HttpStatusCode.NoContent, client.redefinir(e, c).status)
+        assertEquals(HttpStatusCode.OK, client.redefinir(e, c).status)
         assertEquals(HttpStatusCode.BadRequest, client.redefinir(e, c, "outra-senha-33").status)
         assertEquals(HttpStatusCode.OK, client.entrar(e, "senha-nova-22").status, "a segunda tentativa não trocou a senha")
     }
@@ -138,14 +138,14 @@ class RecuperacaoRotasTest {
         client.esqueci(e); val primeiro = ultimoCodigo(e)
         client.esqueci(e); val segundo = ultimoCodigo(e)
         if (primeiro != segundo) assertEquals(HttpStatusCode.BadRequest, client.redefinir(e, primeiro).status, "o código antigo deixa de valer")
-        assertEquals(HttpStatusCode.NoContent, client.redefinir(e, segundo).status)
+        assertEquals(HttpStatusCode.OK, client.redefinir(e, segundo).status)
     }
 
     @Test fun senhaNovaCurtaDa400SemConsumirOCodigo() = comApp {
         val e = email(); client.cadastrar(e); caixa.limpar(); client.esqueci(e)
         val c = ultimoCodigo(e)
         assertEquals(HttpStatusCode.BadRequest, client.redefinir(e, c, "curta").status)
-        assertEquals(HttpStatusCode.NoContent, client.redefinir(e, c).status, "o erro de validação não gasta o código")
+        assertEquals(HttpStatusCode.OK, client.redefinir(e, c).status, "o erro de validação não gasta o código")
     }
 
     @Test fun codigoMalFormadoOuEmailInvalidoDa400() = comApp {

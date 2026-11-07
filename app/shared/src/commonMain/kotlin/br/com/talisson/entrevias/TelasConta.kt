@@ -63,8 +63,17 @@ fun TelaConta(e: Estado) {
             Column {
                 T(u.nome, 24, FontWeight.Bold, ls = -0.5f)
                 T(u.email, 14, cor = c.muted)
-                if (u.ehGestor) Etiqueta("Gestor")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (u.ehGestor) Etiqueta("Gestor")
+                    if (u.emailVerificado) Etiqueta("E-mail confirmado")
+                }
             }
+        }
+        if (!u.emailVerificado) Cartao {
+            T("Confirme seu e-mail", 20, FontWeight.Bold, ls = -0.4f)
+            T("Enviamos um código de 6 dígitos para ${u.email}. Confirmar garante que você consiga recuperar a senha.", 14, cor = c.muted)
+            Mensagens(e)
+            Botao("Informar o código", { e.abrirVerificacao() }, Modifier.fillMaxWidth(), primario = true)
         }
         Cartao {
             T("Seus dados", 20, FontWeight.Bold, ls = -0.4f)
@@ -80,7 +89,6 @@ fun TelaConta(e: Estado) {
             Botao("Empresas parceiras", { e.ir(Tela.EMPRESAS) }, Modifier.fillMaxWidth())
         }
         Botao("Sair da conta", { e.sair() }, Modifier.fillMaxWidth())
-        T("Neste momento a sessão fica só na memória: ao fechar o app, entre de novo.", 13, cor = c.muted)
     }
 }
 
@@ -102,10 +110,89 @@ fun TelaEntrar(e: Estado) {
             Mensagens(e)
             Botao(if (e.contaOcupada) "Entrando…" else "Entrar", { e.entrar(email, senha) }, Modifier.fillMaxWidth(), primario = true, grande = true)
         }
+        Link("Esqueci minha senha") { e.abrirRecuperacao() }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             T("Ainda não tem conta?", 15, cor = c.muted)
             Link("Criar conta") { e.limparMensagensDeConta(); e.ir(Tela.CADASTRO) }
         }
+    }
+}
+
+// ---------------------------------------------------------------- E-MAIL: RECUPERAR SENHA (RQ9) E CONFIRMAR (RQ10)
+/** Avisa, em toda tela que depende de e-mail, que hoje o envio é simulado (docs/SIMULADOS.md) ou está desligado. */
+@Composable
+private fun AvisoDeEmail(e: Estado) {
+    LaunchedEffect(Unit) { e.carregarEstadoEmail() }
+    val s = e.emailEstado ?: return
+    if (!s.disponivel) Aviso("Indisponível no momento", listOf("O envio de e-mail ainda não está ativo neste servidor. Volte mais tarde."))
+    else if (s.simulado) Aviso("E-mail simulado", listOf("Nenhum e-mail de verdade é enviado nesta versão.", "O código aparece só na caixa de saída do servidor de desenvolvimento."))
+}
+
+@Composable
+fun TelaEsqueciSenha(e: Estado) {
+    val c = cores()
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Link("‹  Entrar") { e.limparMensagensDeConta(); e.ir(Tela.ENTRAR) }
+        Column {
+            Eyebrow("Recuperar acesso")
+            Spacer(Modifier.height(8.dp))
+            T("Esqueci minha senha", 30, FontWeight.Bold, ls = -0.9f)
+            Spacer(Modifier.height(6.dp))
+            T("Informe o e-mail da conta. Se ele existir, enviamos um código de 6 dígitos que vale por 15 minutos.", 15, cor = c.muted)
+        }
+        AvisoDeEmail(e)
+        Cartao {
+            CampoTexto("E-mail", e.recEmail, { e.recEmail = it }, dica = "voce@email.com", teclado = KeyboardType.Email, comErro = e.contaErro != null)
+            Mensagens(e)
+            Botao(if (e.contaOcupada) "Enviando…" else "Enviar código", { e.pedirCodigoDeSenha(e.recEmail) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+        }
+    }
+}
+
+@Composable
+fun TelaRedefinirSenha(e: Estado) {
+    val c = cores()
+    var codigo by remember { mutableStateOf("") }
+    var nova by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Link("‹  Pedir outro código") { e.limparMensagensDeConta(); e.ir(Tela.ESQUECI_SENHA) }
+        Column {
+            Eyebrow("Recuperar acesso")
+            Spacer(Modifier.height(8.dp))
+            T("Nova senha", 30, FontWeight.Bold, ls = -0.9f)
+            Spacer(Modifier.height(6.dp))
+            T("Digite o código enviado para ${e.recEmail} e escolha a nova senha. Você será desconectado dos outros aparelhos.", 15, cor = c.muted)
+        }
+        AvisoDeEmail(e)
+        Cartao {
+            CampoTexto("Código de 6 dígitos", codigo, { codigo = it.filter { ch -> ch in '0'..'9' }.take(6) }, dica = "000000", teclado = KeyboardType.Number, comErro = e.contaErro != null)
+            CampoTexto("Nova senha (mínimo 8 caracteres)", nova, { nova = it }, senha = true)
+            Mensagens(e)
+            Botao(if (e.contaOcupada) "Salvando…" else "Trocar a senha", { e.redefinirSenha(codigo, nova) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+        }
+    }
+}
+
+@Composable
+fun TelaVerificarEmail(e: Estado) {
+    val c = cores()
+    var codigo by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Link("‹  Conta") { e.limparMensagensDeConta(); e.ir(Tela.CONTA) }
+        Column {
+            Eyebrow("Confirmar e-mail")
+            Spacer(Modifier.height(8.dp))
+            T("Digite o código", 30, FontWeight.Bold, ls = -0.9f)
+            Spacer(Modifier.height(6.dp))
+            T("Enviamos 6 dígitos para ${e.usuario?.email.orEmpty()}. O código vale por 15 minutos.", 15, cor = c.muted)
+        }
+        AvisoDeEmail(e)
+        Cartao {
+            CampoTexto("Código de 6 dígitos", codigo, { codigo = it.filter { ch -> ch in '0'..'9' }.take(6) }, dica = "000000", teclado = KeyboardType.Number, comErro = e.contaErro != null)
+            Mensagens(e)
+            Botao(if (e.contaOcupada) "Confirmando…" else "Confirmar e-mail", { e.confirmarEmail(codigo) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+        }
+        Link("Enviar um código novo") { e.reenviarVerificacao() }
     }
 }
 

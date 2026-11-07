@@ -1,6 +1,11 @@
 package br.com.talisson.entrevias
 
+import br.com.talisson.entrevias.domain.AvisoApi
 import br.com.talisson.entrevias.domain.CadastroPedido
+import br.com.talisson.entrevias.domain.CodigoPedido
+import br.com.talisson.entrevias.domain.EsqueciSenhaPedido
+import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.RedefinirSenhaPedido
 import br.com.talisson.entrevias.domain.Empresa
 import br.com.talisson.entrevias.domain.EmpresaPedido
 import br.com.talisson.entrevias.domain.ErroApi
@@ -80,4 +85,15 @@ class Api(private val base: String = urlBase()) {
         chamar { http.post("$base/api/empresas") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(p) } }
     suspend fun atualizarEmpresa(token: String, id: Int, p: EmpresaPedido): Resp<Empresa> =
         chamar { http.put("$base/api/empresas/$id") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(p) } }
+
+    // ---------- e-mail: recuperar senha (RQ9) e confirmar e-mail (RQ10) ----------
+
+    suspend fun estadoEmail(): Resp<EstadoEmail> = chamar { http.get("$base/api/email/estado") }
+    suspend fun esqueciSenha(email: String): Resp<AvisoApi> =
+        chamar { http.post("$base/api/senha/esqueci") { contentType(ContentType.Application.Json); setBody(EsqueciSenhaPedido(email)) } }
+    suspend fun redefinirSenha(p: RedefinirSenhaPedido): Resp<AvisoApi> =
+        chamar { http.post("$base/api/senha/redefinir") { contentType(ContentType.Application.Json); setBody(p) } }
+    suspend fun enviarVerificacao(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/verificacao/enviar") { header(HttpHeaders.Authorization, "Bearer $token") } }
+    suspend fun confirmarEmail(token: String, codigo: String): Resp<Usuario> =
+        chamar { http.post("$base/api/verificacao/confirmar") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(CodigoPedido(codigo)) } }
 }

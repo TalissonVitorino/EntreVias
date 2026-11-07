@@ -1,6 +1,6 @@
 package br.com.talisson.entrevias
 
-import br.com.talisson.entrevias.domain.Aviso
+import br.com.talisson.entrevias.domain.AvisoApi
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.CodigoPedido
 import br.com.talisson.entrevias.domain.EsqueciSenhaPedido
@@ -142,7 +142,7 @@ fun Route.rotasDeConta() {
         val p = call.corpo<EsqueciSenhaPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
         Validacao.email(p.email)?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
         Recuperacao.pedirCodigoDeSenha(p.email)
-        call.respond(HttpStatusCode.Accepted, Aviso("Se esse e-mail tiver conta, enviamos um código. Ele vale por 15 minutos."))
+        call.respond(HttpStatusCode.Accepted, AvisoApi("Se esse e-mail tiver conta, enviamos um código. Ele vale por 15 minutos."))
     }
 
     post("/api/senha/redefinir") {
@@ -151,7 +151,7 @@ fun Route.rotasDeConta() {
         val p = call.corpo<RedefinirSenhaPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
         (Validacao.email(p.email) ?: Validacao.codigo(p.codigo) ?: Validacao.senha(p.novaSenha))?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
         if (!Recuperacao.redefinirSenha(p.email, p.codigo, p.novaSenha)) return@post call.erro(HttpStatusCode.BadRequest, "Código inválido ou vencido. Peça um novo.")
-        call.respond(HttpStatusCode.NoContent)
+        call.respond(AvisoApi("Senha alterada. Entre com a nova senha."))
     }
 
     post("/api/verificacao/enviar") {
@@ -161,7 +161,7 @@ fun Route.rotasDeConta() {
             call.response.header(HttpHeaders.RetryAfter, "3600")
             return@post call.erro(HttpStatusCode.TooManyRequests, "Muitas tentativas. Tente de novo mais tarde.")
         }
-        call.respond(HttpStatusCode.Accepted, Aviso("Enviamos um código para o seu e-mail."))
+        call.respond(HttpStatusCode.Accepted, AvisoApi("Enviamos um código para o seu e-mail."))
     }
 
     post("/api/verificacao/confirmar") {

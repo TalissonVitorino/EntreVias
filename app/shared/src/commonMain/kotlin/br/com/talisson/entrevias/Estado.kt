@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.Empresa
+import br.com.talisson.entrevias.domain.EstadoEmail
 import br.com.talisson.entrevias.domain.EmpresaPedido
 import br.com.talisson.entrevias.domain.LoginPedido
 import br.com.talisson.entrevias.domain.LimiteRoteiros
@@ -17,6 +18,7 @@ import br.com.talisson.entrevias.domain.ParametrosPlanoB
 import br.com.talisson.entrevias.domain.ParametrosRisco
 import br.com.talisson.entrevias.domain.PerfilPedido
 import br.com.talisson.entrevias.domain.PlanoB
+import br.com.talisson.entrevias.domain.RedefinirSenhaPedido
 import br.com.talisson.entrevias.domain.PlanoBConexao
 import br.com.talisson.entrevias.domain.RiscoConexao
 import br.com.talisson.entrevias.domain.RiscoRota
@@ -32,7 +34,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS }
+enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -101,7 +103,7 @@ class Estado(
     fun removerPlano(p: Plano) { if (planos.remove(p)) guardarRoteiros() }
 
     // ---------- conta (US8, US9, US11) e empresas parceiras (US7) ----------
-    // A sessão fica só na memória: ao fechar o app é preciso entrar de novo (armazenamento seguro do token = próxima etapa).
+    // O token fica em memória e também no armazenamento seguro do aparelho (SessaoSalva), conferido ao abrir o app.
     private var token: String? = null
     var usuario by mutableStateOf<Usuario?>(null)
     var contaOcupada by mutableStateOf(false)
@@ -184,6 +186,74 @@ class Estado(
             contaOcupada = true; limparMensagensDeConta()
             when (val r = api.salvarPerfil(t, p)) {
                 is Resp.Ok -> { usuario = r.valor; contaAviso = "Dados salvos." }
+                is Resp.Falha -> { contaErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            contaOcupada = false
+        }
+    }
+
+    // ---------- e-mail: recuperar senha (RQ9) e confirmar e-mail (RQ10) ----------
+
+    /** Como o servidor envia e-mail. `null` até a primeira resposta. Simulado = nenhum e-mail real sai (docs/SIMULADOS.md). */
+    var emailEstado by mutableStateOf<EstadoEmail?>(null)
+    var recEmail by mutableStateOf("")
+
+    fun carregarEstadoEmail() {
+        escopo.launch { (api.estadoEmail() as? Resp.Ok)?.let { emailEstado = it.valor } }
+    }
+
+    fun abrirRecuperacao() { limparMensagensDeConta(); recEmail = cadEmail.ifBlank { recEmail }; ir(Tela.ESQUECI_SENHA) }
+
+    fun pedirCodigoDeSenha(email: String) {
+        Validacao.email(email)?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.esqueciSenha(email)) {
+                is Resp.Ok -> { recEmail = email; ir(Tela.REDEFINIR_SENHA); contaAviso = r.valor.mensagem }
+                is Resp.Falha -> contaErro = if (r.status == 429) "Muitas tentativas. Tente de novo em ${minutosTxt(r.esperaSeg)}." else r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun redefinirSenha(codigo: String, novaSenha: String) {
+        val p = RedefinirSenhaPedido(recEmail, codigo.trim(), novaSenha)
+        (Validacao.codigo(p.codigo) ?: Validacao.senha(novaSenha))?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.redefinirSenha(p)) {
+                is Resp.Ok -> { recEmail = ""; ir(Tela.ENTRAR); contaAviso = r.valor.mensagem }
+                is Resp.Falha -> contaErro = if (r.status == 429) "Muitas tentativas. Tente de novo em ${minutosTxt(r.esperaSeg)}." else r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun abrirVerificacao() { limparMensagensDeConta(); ir(Tela.VERIFICAR_EMAIL) }
+
+    fun reenviarVerificacao() {
+        val t = token ?: return
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.enviarVerificacao(t)) {
+                is Resp.Ok -> contaAviso = r.valor.mensagem
+                is Resp.Falha -> { contaErro = if (r.status == 429) "Muitas tentativas. Tente de novo mais tarde." else r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun confirmarEmail(codigo: String) {
+        val t = token ?: return
+        Validacao.codigo(codigo.trim())?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.confirmarEmail(t, codigo.trim())) {
+                is Resp.Ok -> { usuario = r.valor; ir(Tela.CONTA); contaAviso = "E-mail confirmado." }
                 is Resp.Falha -> { contaErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
             }
             contaOcupada = false

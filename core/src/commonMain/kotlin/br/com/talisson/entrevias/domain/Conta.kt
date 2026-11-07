@@ -71,7 +71,7 @@ data class CodigoPedido(val codigo: String)
 
 /** Resposta de sucesso que só carrega um texto para a pessoa. */
 @Serializable
-data class Aviso(val mensagem: String)
+data class AvisoApi(val mensagem: String)
 
 /**
  * Como o servidor envia e-mail. `simulado = true` significa que NENHUM e-mail real sai (ver docs/SIMULADOS.md);
