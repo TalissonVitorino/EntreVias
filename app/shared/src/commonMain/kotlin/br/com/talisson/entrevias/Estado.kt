@@ -101,7 +101,7 @@ class Estado(
     var data by mutableStateOf(DATA_INICIAL)
     /** B1: ida e volta. A volta precisa ser em outro dia, depois da ida. */
     var idaEVolta by mutableStateOf(false)
-    var dataVolta by mutableStateOf(DATA_INICIAL.plusDias(3))
+    var dataVolta by mutableStateOf(DATA_INICIAL.plusDias(1))
     var pax by mutableStateOf(1)
 
     // resultado exibido (guardado no momento da busca)
@@ -761,6 +761,9 @@ class Estado(
     fun risco(r: Rota): RiscoRota = RiscoConexao.avaliar(r, paramsRisco, AtrasoFicticio) { cidade(it) }
 
     val voltaValida get() = !idaEVolta || dataVolta > data
+
+    /** Escolher a data da ida: se a volta ficou antes (ou no mesmo dia), ela vai para o dia seguinte, em vez de a busca travar. */
+    fun escolherDataDaIda(d: Data) { data = d; if (dataVolta <= d) dataVolta = d.plusDias(1) }
     val podeBuscar get() = origem != null && destino != null && origem != destino && voltaValida
 
     fun buscar() {

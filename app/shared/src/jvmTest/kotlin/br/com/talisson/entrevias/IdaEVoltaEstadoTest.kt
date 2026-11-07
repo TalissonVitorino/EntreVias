@@ -42,4 +42,15 @@ class IdaEVoltaEstadoTest {
         e.calcularPedido()
         assertNull(e.pedido); assertTrue("volta" in e.compraErro.orEmpty())
     }
+
+    @Test fun aVoltaPadraoCaiNoDiaSeguinteDaIdaPadrao() {
+        val e = estado()
+        assertEquals(DATA_INICIAL.plusDias(1), e.dataVolta, "a base de demonstração só tem viagens em 2 dias seguidos: a volta padrão tem que cair neles")
+    }
+
+    @Test fun mudarADataDaIdaEmpurraAVoltaQuandoElaFicariaAntes() {
+        val e = estado(); e.idaEVolta = true
+        e.escolherDataDaIda(Data(2026, 12, 10)); assertEquals(Data(2026, 12, 11), e.dataVolta); assertTrue(e.voltaValida)
+        e.dataVolta = Data(2026, 12, 20); e.escolherDataDaIda(Data(2026, 12, 12)); assertEquals(Data(2026, 12, 20), e.dataVolta, "volta que já era depois da ida não mexe")
+    }
 }

@@ -103,7 +103,7 @@ fun TelaBuscar(e: Estado) {
                     horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
                 ) { T(e.data.curta(), 17, FontWeight.Medium); T("▾", 14, cor = c.muted) }
             }
-            if (calAberto) CalendarioDialog(e.data, { e.data = it; calAberto = false }, { calAberto = false })
+            if (calAberto) CalendarioDialog(e.data, { e.escolherDataDaIda(it); calAberto = false }, { calAberto = false })
             if (e.idaEVolta) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     T("Volta", 14, FontWeight.Medium, c.muted)
