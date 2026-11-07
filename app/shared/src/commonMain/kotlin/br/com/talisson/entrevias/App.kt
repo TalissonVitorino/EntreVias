@@ -101,6 +101,8 @@ fun App() {
                         Tela.CANCELAR -> TelaCancelar(e)
                         Tela.AVISOS -> TelaAvisos(e)
                         Tela.EM_ANDAMENTO -> TelaEmAndamento(e)
+                        Tela.AJUDA -> TelaAjuda(e)
+                        Tela.AVALIAR -> TelaAvaliar(e)
                     }
                 }
                 if (e.tela == Tela.RESULTADOS && e.selecionadas.isNotEmpty()) {
@@ -125,7 +127,7 @@ fun App() {
                 Row(Modifier.fillMaxWidth()) {
                     val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL, Tela.PAGAMENTOS, Tela.PASSAGEIROS)
                     val nosSalvos = e.tela == Tela.PLANEJAMENTOS
-                    val nasViagens = e.tela in setOf(Tela.HISTORICO, Tela.COMPRA_DETALHE, Tela.CANCELAR, Tela.BILHETES, Tela.AVISOS, Tela.EM_ANDAMENTO)
+                    val nasViagens = e.tela in setOf(Tela.HISTORICO, Tela.COMPRA_DETALHE, Tela.CANCELAR, Tela.BILHETES, Tela.AVISOS, Tela.EM_ANDAMENTO, Tela.AJUDA, Tela.AVALIAR)
                     val naBusca = !naConta && !nosSalvos && !nasViagens
                     @Composable
                     fun Aba(rotulo: String, ativa: Boolean, onClick: () -> Unit, icone: @Composable (androidx.compose.ui.graphics.Color) -> Unit) {

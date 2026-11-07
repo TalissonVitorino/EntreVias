@@ -9,6 +9,11 @@ import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.Empresa
 import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.ValidacaoAjuda
+import br.com.talisson.entrevias.domain.NovoChamado
+import br.com.talisson.entrevias.domain.NovaAvaliacao
+import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.Avaliacao
 import br.com.talisson.entrevias.domain.EtapaDoTrecho
 import br.com.talisson.entrevias.domain.ViagemAtiva
 import br.com.talisson.entrevias.domain.StatusPedido
@@ -56,7 +61,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS,
-    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO }
+    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -566,6 +571,65 @@ class Estado(
 
     fun abrirEmAndamento() { ir(Tela.EM_ANDAMENTO); carregarAtivas() }
 
+    // F1: ajuda e F2: avaliação
+    val chamados = mutableStateListOf<Chamado>()
+    var ajudaPedido by mutableStateOf<Pedido?>(null)
+    var ajudaTrecho by mutableStateOf<Int?>(null)
+    var chamadoNovo by mutableStateOf<Chamado?>(null)
+    var ajudaErro by mutableStateOf<String?>(null)
+    var ajudaOcupada by mutableStateOf(false)
+
+    fun abrirAjuda(p: Pedido? = null) {
+        ajudaPedido = p; ajudaTrecho = null; chamadoNovo = null; ajudaErro = null; ir(Tela.AJUDA); carregarChamados()
+        if (historico.isEmpty()) carregarHistorico(null)
+    }
+
+    fun carregarChamados() {
+        val t = token ?: return
+        escopo.launch { (api.chamados(t) as? Resp.Ok)?.let { chamados.clear(); chamados.addAll(it.valor) } }
+    }
+
+    fun enviarChamado(assunto: String, mensagem: String) {
+        val t = token ?: return
+        val pedido = NovoChamado(ajudaPedido?.id, ajudaTrecho.takeIf { ajudaPedido != null }, assunto, mensagem.ifBlank { null })
+        ValidacaoAjuda.chamado(pedido)?.let { ajudaErro = it; return }
+        if (ajudaOcupada) return
+        escopo.launch {
+            ajudaOcupada = true; ajudaErro = null
+            when (val x = api.abrirChamado(t, pedido)) {
+                is Resp.Ok -> { chamadoNovo = x.valor; carregarChamados() }
+                is Resp.Falha -> { ajudaErro = if (x.status == 429) "Muitos pedidos de ajuda seguidos. Tente de novo mais tarde." else x.mensagem; if (x.status == 401) sessaoExpirou() }
+            }
+            ajudaOcupada = false
+        }
+    }
+
+    val avaliacoes = mutableStateListOf<Avaliacao>()
+    var avaliarTrecho by mutableStateOf(1)
+    var avaliacaoEnviada by mutableStateOf<Avaliacao?>(null)
+    var avaliacaoErro by mutableStateOf<String?>(null)
+    var avaliacaoOcupada by mutableStateOf(false)
+
+    fun abrirAvaliacao(p: Pedido, trecho: Int) {
+        pedidoAberto = p; avaliarTrecho = trecho; avaliacaoEnviada = null; avaliacaoErro = null; avaliacoes.clear(); ir(Tela.AVALIAR)
+        val t = token ?: return
+        escopo.launch { (api.avaliacoes(t, p.id) as? Resp.Ok)?.let { avaliacoes.clear(); avaliacoes.addAll(it.valor); avaliacaoEnviada = it.valor.firstOrNull { a -> a.trecho == trecho } } }
+    }
+
+    fun enviarAvaliacao(a: NovaAvaliacao) {
+        val t = token ?: return; val p = pedidoAberto ?: return
+        ValidacaoAjuda.avaliacao(a)?.let { avaliacaoErro = it; return }
+        if (avaliacaoOcupada) return
+        escopo.launch {
+            avaliacaoOcupada = true; avaliacaoErro = null
+            when (val x = api.avaliar(t, p.id, avaliarTrecho, a)) {
+                is Resp.Ok -> avaliacaoEnviada = x.valor
+                is Resp.Falha -> { avaliacaoErro = x.mensagem; if (x.status == 401) sessaoExpirou() }
+            }
+            avaliacaoOcupada = false
+        }
+    }
+
     // D3: cancelamento
     var previa by mutableStateOf<CancelamentoPrevia?>(null)
 
@@ -603,7 +667,7 @@ class Estado(
     /** Nada de uma pessoa sobra para a próxima no mesmo aparelho: carrinho, histórico, avisos e bilhetes guardados. */
     private fun limparDadosDaCompra() {
         pedido = null; pagamento = null; compraRota = null; compraPendente = false; paxSelecionados.clear(); escolhas.clear(); mapa = null
-        historico.clear(); pedidoAberto = null; previa = null; avisos.clear(); ativas.clear(); apagarBilhetesGuardados()
+        historico.clear(); pedidoAberto = null; previa = null; avisos.clear(); ativas.clear(); chamados.clear(); avaliacoes.clear(); ajudaPedido = null; chamadoNovo = null; avaliacaoEnviada = null; apagarBilhetesGuardados()
     }
 
     private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }

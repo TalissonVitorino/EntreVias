@@ -87,6 +87,7 @@ fun TelaHistorico(e: Estado) {
                 }
             }
         }
+        Link("Precisa de ajuda? Falar com o suporte  ›") { e.abrirAjuda() }
         if (e.historico.isNotEmpty()) T("Mostrando ${e.historico.size} ${if (e.historico.size == 1) "compra" else "compras"}", 13, cor = c.muted)
     }
 }
@@ -132,8 +133,13 @@ fun TelaCompraDetalhe(e: Estado) {
         }
         if (p.status == StatusPedido.PAGO) {
             Botao("Ver bilhetes", { e.abrirBilhetes(p) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+            p.trechos.forEach { t ->
+                if (jaChegou(t.chegadaReal)) Botao("Avaliar ${e.cidade(t.origem)} → ${e.cidade(t.destino)}", { e.abrirAvaliacao(p, t.ordem) }, Modifier.fillMaxWidth(), ativo = true)
+            }
+            if (p.trechos.none { jaChegou(it.chegadaReal) }) T("Você poderá avaliar cada trecho depois de chegar ao destino.", 13, cor = c.muted)
             Botao("Cancelar compra", { e.abrirCancelamento(p) }, Modifier.fillMaxWidth())
         }
+        Botao("Pedir ajuda com esta compra", { e.abrirAjuda(p) }, Modifier.fillMaxWidth())
     }
 }
 
@@ -266,5 +272,6 @@ fun TelaEmAndamento(e: Estado) {
             }
         }
         Botao("Todos os bilhetes", { e.abrirBilhetes(p) }, Modifier.fillMaxWidth(), primario = true)
+        Botao("Pedir ajuda", { e.abrirAjuda(p) }, Modifier.fillMaxWidth())
     }
 }

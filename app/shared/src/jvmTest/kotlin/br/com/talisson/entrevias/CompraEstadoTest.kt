@@ -31,6 +31,8 @@ class CompraEstadoTest {
     private var respostaPedido: () -> Pair<Int, String> = { 201 to json.encodeToString(carrinho()) }
     private var respostaCartao: () -> Pair<Int, String> = { 201 to json.encodeToString(Pagamento(1, 7, "cartao", StatusPagamento.APROVADO)) }
     private var respostaPagamento: () -> Pair<Int, String> = { 200 to json.encodeToString(Pagamento(1, 7, "pix", StatusPagamento.APROVADO)) }
+    private var statusChamado = 201
+    private var statusAvaliacao = 201
     private var pedidoPago = carrinho(listOf(11, 12), StatusPedido.PAGO, listOf(Bilhete("EVB1", 1, "Ana Adulta", 11, 4)))
 
     private fun responde(ex: HttpExchange, status: Int, corpo: String) {
@@ -55,6 +57,9 @@ class CompraEstadoTest {
         rota("/api/pedidos/7/cancelamento") { ex, _ -> responde(ex, 200, json.encodeToString(CancelamentoPrevia(23960, 1198, 22762, 5))) }
         rota("/api/pedidos/7/cancelar") { ex, _ -> responde(ex, 200, json.encodeToString(pedidoPago.copy(status = StatusPedido.CANCELADO, reembolsoCentavos = 22762, bilhetes = emptyList()))) }
         rota("/api/viagens-ativas") { ex, _ -> responde(ex, 200, json.encodeToString(listOf(ViagemAtiva(pedidoPago, listOf("proximo", "proximo"), 1_800_000_000L)))) }
+        rota("/api/chamados") { ex, c -> if (ex.requestMethod == "POST") { if (statusChamado == 201) responde(ex, 201, json.encodeToString(Chamado(1, "AJ-10001", 7, null, "Reembolso", null, "aberto", null, 1_800_000_000L))) else responde(ex, statusChamado, """{"mensagem":"Muitas tentativas."}""") } else responde(ex, 200, "[]") }
+        rota("/api/pedidos/7/avaliacoes") { ex, _ -> responde(ex, 200, "[]") }
+        rota("/api/pedidos/7/trechos/1/avaliacao") { ex, c -> if (statusAvaliacao == 201) responde(ex, 201, """{"id":1,"pedidoId":7,"trecho":1,"estrelas":4,"tags":["Pontual"],"reclamacao":false,"criadaEm":1}""") else responde(ex, statusAvaliacao, """{"mensagem":"Você poderá avaliar depois de chegar ao destino."}""") }
         rota("/api/notificacoes") { ex, _ -> responde(ex, 200, json.encodeToString(listOf(Notificacao(1, "compra", "Compra confirmada", "ok", 7, 1_800_000_000L)))) }
         s.start(); servidor = s
         return "http://127.0.0.1:${s.address.port}"
@@ -231,5 +236,58 @@ class CompraEstadoTest {
         val e = estado(); e.guardarBilhetes(passada); servidor!!.stop(0)
         e.carregarAtivas(); Thread.sleep(500)
         assertTrue(e.ativas.isEmpty())
+    }
+
+    // ---------- F1 e F2 ----------
+
+    @Test fun chamadoInvalidoNemChamaOServidor() {
+        val e = estado()
+        e.enviarChamado("Inventado", ""); assertNotNull(e.ajudaErro)
+        e.enviarChamado("Outro", ""); assertNotNull(e.ajudaErro, "\"Outro\" pede texto")
+        assertTrue(chamadas("POST", "/api/chamados").isEmpty())
+    }
+
+    @Test fun chamadoValidoMostraOProtocoloEMandaAViagemEOTrecho() {
+        val e = estado(); e.abrirAjuda(pedidoPago); e.ajudaTrecho = 1
+        e.enviarChamado("Reembolso", "Quando cai?"); esperar { e.chamadoNovo != null }
+        assertEquals("AJ-10001", e.chamadoNovo!!.protocolo)
+        val corpo = chamadas("POST", "/api/chamados").single()
+        assertTrue("\"pedidoId\":7" in corpo && "\"trecho\":1" in corpo && "Reembolso" in corpo, corpo)
+    }
+
+    @Test fun semViagemOTrechoNaoVai() {
+        val e = estado(); e.abrirAjuda(null); e.ajudaTrecho = 1
+        e.enviarChamado("Reembolso", ""); esperar { e.chamadoNovo != null }
+        assertFalse("trecho" in chamadas("POST", "/api/chamados").single().replace("\"trecho\":null", ""), "trecho sem viagem é ignorado")
+    }
+
+    @Test fun limiteDeChamadosApareceComoTexto() {
+        statusChamado = 429
+        val e = estado(); e.enviarChamado("Reembolso", ""); esperar { e.ajudaErro != null }
+        assertTrue("Muitos pedidos" in e.ajudaErro!!); assertNull(e.chamadoNovo)
+    }
+
+    @Test fun avaliacaoSemEstrelaOuReclamacaoSemTextoNaoVaiAoServidor() {
+        val e = estado(); e.abrirAvaliacao(pedidoPago, 1)
+        e.enviarAvaliacao(NovaAvaliacao(0)); assertNotNull(e.avaliacaoErro)
+        e.enviarAvaliacao(NovaAvaliacao(1, reclamacao = true)); assertNotNull(e.avaliacaoErro)
+        assertTrue(chamadas("POST", "/api/pedidos/7/trechos/1/avaliacao").isEmpty())
+    }
+
+    @Test fun avaliacaoValidaEhEnviadaEMostrada() {
+        val e = estado(); e.abrirAvaliacao(pedidoPago, 1)
+        e.enviarAvaliacao(NovaAvaliacao(4, listOf("Pontual"))); esperar { e.avaliacaoEnviada != null }
+        assertEquals(4, e.avaliacaoEnviada!!.estrelas)
+    }
+
+    @Test fun avaliarCedoMostraAMensagemDoServidor() {
+        statusAvaliacao = 409
+        val e = estado(); e.abrirAvaliacao(pedidoPago, 1); e.enviarAvaliacao(NovaAvaliacao(5)); esperar { e.avaliacaoErro != null }
+        assertTrue("depois de chegar" in e.avaliacaoErro!!); assertNull(e.avaliacaoEnviada)
+    }
+
+    @Test fun sairLimpaChamadosEAvaliacoes() {
+        val e = estado(); e.abrirAjuda(pedidoPago); e.enviarChamado("Reembolso", ""); esperar { e.chamadoNovo != null }
+        e.sair(); assertTrue(e.chamados.isEmpty()); assertNull(e.chamadoNovo); assertNull(e.ajudaPedido); assertNull(e.avaliacaoEnviada)
     }
 }

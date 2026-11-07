@@ -1,6 +1,10 @@
 package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.AvisoApi
+import br.com.talisson.entrevias.domain.Avaliacao
+import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.NovaAvaliacao
+import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.CancelamentoPedido
 import br.com.talisson.entrevias.domain.CancelamentoPrevia
 import br.com.talisson.entrevias.domain.CupomPedido
@@ -147,6 +151,10 @@ class Api(private val base: String = urlBase()) {
     suspend fun previaCancelamento(token: String, id: Int): Resp<CancelamentoPrevia> = chamar { http.get("$base/api/pedidos/$id/cancelamento") { auth(token) } }
     suspend fun cancelar(token: String, id: Int, motivo: String?): Resp<Pedido> = chamar { http.post("$base/api/pedidos/$id/cancelar") { auth(token); json(CancelamentoPedido(motivo)) } }
     suspend fun viagensAtivas(token: String): Resp<List<ViagemAtiva>> = chamar { http.get("$base/api/viagens-ativas") { auth(token) } }
+    suspend fun chamados(token: String): Resp<List<Chamado>> = chamar { http.get("$base/api/chamados") { auth(token) } }
+    suspend fun abrirChamado(token: String, p: NovoChamado): Resp<Chamado> = chamar { http.post("$base/api/chamados") { auth(token); json(p) } }
+    suspend fun avaliar(token: String, pedidoId: Int, trecho: Int, p: NovaAvaliacao): Resp<Avaliacao> = chamar { http.post("$base/api/pedidos/$pedidoId/trechos/$trecho/avaliacao") { auth(token); json(p) } }
+    suspend fun avaliacoes(token: String, pedidoId: Int): Resp<List<Avaliacao>> = chamar { http.get("$base/api/pedidos/$pedidoId/avaliacoes") { auth(token) } }
     suspend fun avisos(token: String): Resp<List<Notificacao>> = chamar { http.get("$base/api/notificacoes") { auth(token) } }
     suspend fun marcarAvisosLidos(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/notificacoes/lidas") { auth(token) } }
 }
