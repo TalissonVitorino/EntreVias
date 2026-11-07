@@ -77,6 +77,7 @@ fun App() {
                         Tela.CONTA -> TelaConta(e)
                         Tela.ENTRAR -> TelaEntrar(e)
                         Tela.CADASTRO -> TelaCadastro(e)
+                        Tela.TERMOS -> TelaTermos(e)
                         Tela.EMPRESAS -> TelaEmpresas(e)
                     }
                 }
@@ -100,7 +101,7 @@ fun App() {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
                 Row(Modifier.fillMaxWidth()) {
-                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS)
+                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.TERMOS)
                     val nosSalvos = e.tela == Tela.PLANEJAMENTOS
                     val naBusca = !naConta && !nosSalvos
                     @Composable

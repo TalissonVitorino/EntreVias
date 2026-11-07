@@ -32,7 +32,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS }
+enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -130,7 +130,18 @@ class Estado(
 
     fun limparMensagensDeConta() { contaErro = null; contaAviso = null }
 
-    private fun abrirSessao(u: Usuario, t: String) { token = t; sessaoSalva.guardar(t); usuario = u; limparMensagensDeConta(); ir(Tela.CONTA) }
+    // Rascunho do cadastro: fica aqui (não na tela) para não se perder quando a pessoa sai para ler os Termos.
+    var cadNome by mutableStateOf("")
+    var cadEmail by mutableStateOf("")
+    var cadCelular by mutableStateOf("")
+    var cadSenha by mutableStateOf("")
+    var cadAceita by mutableStateOf(false)   // nunca pré-marcado
+    var documento by mutableStateOf(Documento.TERMOS)
+
+    fun limparRascunhoDoCadastro() { cadNome = ""; cadEmail = ""; cadCelular = ""; cadSenha = ""; cadAceita = false }
+    fun abrirDocumento(d: Documento) { documento = d; ir(Tela.TERMOS) }
+
+    private fun abrirSessao(u: Usuario, t: String) { token = t; sessaoSalva.guardar(t); usuario = u; limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA) }
 
     fun cadastrar(p: CadastroPedido) {
         Validacao.cadastro(p)?.let { contaErro = it; return }
@@ -161,7 +172,7 @@ class Estado(
 
     fun sair() {
         val t = token
-        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); limparMensagensDeConta(); ir(Tela.CONTA)
+        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
         if (t != null) escopo.launch { api.sair(t) }
     }
 
