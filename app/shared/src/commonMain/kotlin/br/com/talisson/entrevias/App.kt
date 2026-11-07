@@ -34,7 +34,7 @@ import androidx.compose.ui.unit.dp
 fun App() {
     EntreViasTheme {
         val escopo = androidx.compose.runtime.rememberCoroutineScope()
-        val e = remember { Estado(Api(), escopo).also { it.iniciar() } }
+        val e = remember { Estado(Api(), escopo, criarArmazenamento()).also { it.iniciar() } }
         val c = cores()
         var splash by remember { androidx.compose.runtime.mutableStateOf(true) }
         Box(Modifier.fillMaxSize()) {

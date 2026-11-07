@@ -45,7 +45,12 @@ const val VENDEDOR = "Vendedor fictício: Bilheteria de demonstração"
 const val SEPARADAS = "Passagens separadas: atrasos podem causar a perda da conexão. Não há proteção de conexão confirmada."
 const val TAXAS = "Taxas de compra não consultadas. O valor final pode variar fora da demonstração."
 
-class Estado(private val api: Api, private val escopo: CoroutineScope) {
+class Estado(
+    private val api: Api,
+    private val escopo: CoroutineScope,
+    armazenamento: ArmazenamentoLocal = ArmazenamentoEmMemoria(),
+) {
+    private val sessaoSalva = SessaoSalva(armazenamento)
     var carga by mutableStateOf<Carga>(Carga.Carregando)
     var terminais by mutableStateOf<List<Terminal>>(emptyList())
     var params by mutableStateOf(ParametrosConexao())
@@ -88,9 +93,27 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
     val empresas = mutableStateListOf<Empresa>()
     var empresasCarga by mutableStateOf<Carga>(Carga.Pronto)
 
+    /** Vira `true` quando a verificação do token guardado terminou (deu certo, foi recusado ou o servidor não respondeu). */
+    var sessaoVerificada by mutableStateOf(false)
+
+    /**
+     * Ao abrir o app: se há token guardado, o servidor diz se ainda vale. Recusado (401) = apaga do aparelho.
+     * Servidor fora do ar = mantém guardado e segue como visitante, sem apagar a sessão por causa de uma queda de rede.
+     */
+    private suspend fun restaurarSessao() {
+        try {
+            if (token != null) return
+            val t = sessaoSalva.token() ?: return
+            when (val r = api.perfil(t)) {
+                is Resp.Ok -> { token = t; usuario = r.valor }
+                is Resp.Falha -> if (r.status == 401) sessaoSalva.apagar()
+            }
+        } finally { sessaoVerificada = true }
+    }
+
     fun limparMensagensDeConta() { contaErro = null; contaAviso = null }
 
-    private fun abrirSessao(u: Usuario, t: String) { token = t; usuario = u; limparMensagensDeConta(); ir(Tela.CONTA) }
+    private fun abrirSessao(u: Usuario, t: String) { token = t; sessaoSalva.guardar(t); usuario = u; limparMensagensDeConta(); ir(Tela.CONTA) }
 
     fun cadastrar(p: CadastroPedido) {
         Validacao.cadastro(p)?.let { contaErro = it; return }
@@ -121,7 +144,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
 
     fun sair() {
         val t = token
-        token = null; usuario = null; empresas.clear(); limparMensagensDeConta(); ir(Tela.CONTA)
+        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); limparMensagensDeConta(); ir(Tela.CONTA)
         if (t != null) escopo.launch { api.sair(t) }
     }
 
@@ -139,7 +162,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
         }
     }
 
-    private fun sessaoExpirou() { token = null; usuario = null; empresas.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
+    private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
 
     fun carregarEmpresas() {
         val t = token ?: return
@@ -194,6 +217,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
             } catch (t: Throwable) {
                 Carga.Erro("Não foi possível falar com o servidor (${urlBase()}).")
             }
+            if (carga is Carga.Pronto) restaurarSessao()
         }
     }
 

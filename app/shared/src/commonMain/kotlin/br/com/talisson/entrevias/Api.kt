@@ -72,6 +72,7 @@ class Api(private val base: String = urlBase()) {
     suspend fun sair(token: String) {
         try { http.post("$base/api/logout") { header(HttpHeaders.Authorization, "Bearer $token") } } catch (e: CancellationException) { throw e } catch (_: Exception) { }
     }
+    suspend fun perfil(token: String): Resp<Usuario> = chamar { http.get("$base/api/perfil") { header(HttpHeaders.Authorization, "Bearer $token") } }
     suspend fun salvarPerfil(token: String, p: PerfilPedido): Resp<Usuario> =
         chamar { http.put("$base/api/perfil") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(p) } }
     suspend fun empresas(token: String): Resp<List<Empresa>> = chamar { http.get("$base/api/empresas") { header(HttpHeaders.Authorization, "Bearer $token") } }
