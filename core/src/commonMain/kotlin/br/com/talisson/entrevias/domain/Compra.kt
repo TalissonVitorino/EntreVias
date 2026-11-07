@@ -261,3 +261,28 @@ object ValidacaoAjuda {
         else -> null
     }
 }
+
+// ---------------------------------------------------------------- comprovante (a tela, o texto copiado e o PDF saem do mesmo conteúdo)
+
+@Serializable
+data class LinhaComprovante(val rotulo: String, val valor: String)
+
+@Serializable
+data class SecaoComprovante(val titulo: String, val linhas: List<LinhaComprovante>)
+
+/** O servidor monta o conteúdo uma vez só; o app mostra e copia, e o PDF usa as mesmas linhas. */
+@Serializable
+data class Comprovante(val codigo: String, val secoes: List<SecaoComprovante>, val aviso: String) {
+    fun texto(): String = buildString {
+        append("Comprovante de compra ").append(codigo).append("\n")
+        for (s in secoes) {
+            append("\n").append(s.titulo.uppercase()).append("\n")
+            for (l in s.linhas) append(if (l.rotulo.isBlank()) l.valor else "${l.rotulo}: ${l.valor}").append("\n")
+        }
+        append("\n").append(aviso)
+    }
+}
+
+/** Resposta de `POST /api/pedidos/{id}/comprovante/link`: caminho curto, de uso temporário, que abre o PDF sem login. */
+@Serializable
+data class LinkDoComprovante(val caminho: String, val validoPorSeg: Int)

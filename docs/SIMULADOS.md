@@ -70,7 +70,7 @@ O suporte de verdade é de uma empresa terceira. Troca por produção: integrar 
 
 ## O que o design pede e **não** foi feito
 
-- **Comprovante em PDF** e envio do comprovante por e-mail ou WhatsApp.
+- **Envio do comprovante por e-mail ou WhatsApp.** O comprovante existe na tela, como texto copiável e como PDF (link temporário de 5 min, aberto no navegador do aparelho; o link só vive na memória do servidor).
 - **Remarcação** de viagem (aparece no design do carrinho); só existe o cancelamento.
 - **Conexão entre terminais diferentes** (ex.: a baldeação que exige táxi entre terminais): a base fictícia tem um terminal por cidade,
   então toda conexão é no mesmo terminal. A tela mostra a infraestrutura desse terminal e a caminhada até o embarque.

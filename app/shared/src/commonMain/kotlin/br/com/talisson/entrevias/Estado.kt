@@ -16,6 +16,7 @@ import br.com.talisson.entrevias.domain.ValidacaoAjuda
 import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.NovaAvaliacao
 import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.Comprovante
 import br.com.talisson.entrevias.domain.Avaliacao
 import br.com.talisson.entrevias.domain.OcorrenciaPedido
 import br.com.talisson.entrevias.domain.ViagemDoGestor
@@ -66,7 +67,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS,
-    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR, GESTAO }
+    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR, GESTAO, COMPROVANTE }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -230,7 +231,7 @@ class Estado(
 
     fun sair() {
         val t = token
-        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); gestorViagens.clear(); gestorChamados.clear(); gestorReclamacoes.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
+        token = null; usuario = null; sessaoSalva.apagar(); comprovante = null; comprovanteLink = null; empresas.clear(); gestorViagens.clear(); gestorChamados.clear(); gestorReclamacoes.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
         if (t != null) escopo.launch { api.sair(t) }
     }
 
@@ -561,6 +562,41 @@ class Estado(
 
     fun abrirDetalhe(p: Pedido) { pedidoAberto = p; limparMensagensDaCompra(); ir(Tela.COMPRA_DETALHE) }
     fun abrirBilhetes(p: Pedido) { pedidoAberto = p; ir(Tela.BILHETES) }
+
+    // ---------- comprovante: a tela e o texto vêm do servidor; o PDF abre no navegador por um link temporário ----------
+    var comprovante by mutableStateOf<Comprovante?>(null)
+    var comprovanteCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var comprovanteErro by mutableStateOf<String?>(null)
+    /** Endereço do PDF já pronto; a tela abre e zera (`consumirLinkDoComprovante`). */
+    var comprovanteLink by mutableStateOf<String?>(null)
+    var comprovanteOcupado by mutableStateOf(false)
+
+    fun abrirComprovante(p: Pedido) {
+        val t = token ?: return
+        pedidoAberto = p; comprovante = null; comprovanteErro = null; comprovanteLink = null; comprovanteCarga = Carga.Carregando
+        ir(Tela.COMPROVANTE)
+        escopo.launch {
+            when (val r = api.comprovante(t, p.id)) {
+                is Resp.Ok -> { comprovante = r.valor; comprovanteCarga = Carga.Pronto }
+                is Resp.Falha -> { comprovanteCarga = Carga.Erro(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun pedirPdfDoComprovante() {
+        val t = token ?: return; val p = pedidoAberto ?: return
+        if (comprovanteOcupado) return
+        escopo.launch {
+            comprovanteOcupado = true; comprovanteErro = null
+            when (val r = api.linkDoComprovante(t, p.id)) {
+                is Resp.Ok -> comprovanteLink = api.enderecoDe(r.valor.caminho)
+                is Resp.Falha -> { comprovanteErro = if (r.status == 429) "Muitos pedidos seguidos. Tente de novo mais tarde." else r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            comprovanteOcupado = false
+        }
+    }
+
+    fun consumirLinkDoComprovante(): String? = comprovanteLink.also { comprovanteLink = null }
 
     // Bilhetes guardados no aparelho (RQ49): ficam no mesmo armazenamento protegido do token.
     private fun lerBilhetesGuardados(): List<Pedido> =

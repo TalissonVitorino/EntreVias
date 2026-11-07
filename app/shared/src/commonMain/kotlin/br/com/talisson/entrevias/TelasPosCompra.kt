@@ -139,7 +139,50 @@ fun TelaCompraDetalhe(e: Estado) {
             if (p.trechos.none { jaChegou(it.chegadaReal, p.agora) }) T("Você poderá avaliar cada trecho depois de chegar ao destino.", 13, cor = c.muted)
             Botao("Cancelar compra", { e.abrirCancelamento(p) }, Modifier.fillMaxWidth())
         }
+        if (p.status == StatusPedido.PAGO || p.status == StatusPedido.CANCELADO) Botao("Ver comprovante", { e.abrirComprovante(p) }, Modifier.fillMaxWidth())
         Botao("Pedir ajuda com esta compra", { e.abrirAjuda(p) }, Modifier.fillMaxWidth())
+    }
+}
+
+// ---------------------------------------------------------------- COMPROVANTE
+@Composable
+fun TelaComprovante(e: Estado) {
+    val c = cores()
+    val p = e.pedidoAberto
+    val doc = e.comprovante
+    val clip = androidx.compose.ui.platform.LocalClipboardManager.current
+    val abrir = androidx.compose.ui.platform.LocalUriHandler.current
+    var copiado by remember { mutableStateOf(false) }
+    LaunchedEffect(e.comprovanteLink) { e.consumirLinkDoComprovante()?.let { runCatching { abrir.openUri(it) }.onFailure { _ -> e.comprovanteErro = "Não foi possível abrir o PDF neste aparelho." } } }
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Link("‹  Compra") { if (p != null) e.abrirDetalhe(p) else e.abrirHistorico() }
+        Column {
+            Eyebrow("Compra ${p?.codigo.orEmpty()}")
+            Spacer(Modifier.height(8.dp))
+            T("Comprovante", 30, FontWeight.Bold, ls = -0.9f)
+        }
+        when (val carga = e.comprovanteCarga) {
+            is Carga.Carregando -> T("Carregando…", 15, cor = c.muted)
+            is Carga.Erro -> T("✕  ${carga.mensagem}", 14, FontWeight.SemiBold, c.erro)
+            Carga.Pronto -> Unit
+        }
+        if (doc != null) {
+            doc.secoes.forEach { s ->
+                Cartao(raio = 24, pad = 20, borda = true) {
+                    T(s.titulo, 17, FontWeight.Bold, ls = -0.3f)
+                    s.linhas.forEach { l ->
+                        Column {
+                            T(l.rotulo, 13, FontWeight.Medium, c.muted)
+                            T(l.valor, 15, FontWeight.Medium)
+                        }
+                    }
+                }
+            }
+            T(doc.aviso, 13, cor = c.muted)
+            e.comprovanteErro?.let { T("✕  $it", 14, FontWeight.SemiBold, c.erro) }
+            Botao(if (e.comprovanteOcupado) "Preparando…" else "Abrir PDF", { e.pedirPdfDoComprovante() }, Modifier.fillMaxWidth(), primario = true, grande = true)
+            Botao(if (copiado) "✓ Comprovante copiado" else "Copiar comprovante", { clip.setText(androidx.compose.ui.text.AnnotatedString(doc.texto())); copiado = true }, Modifier.fillMaxWidth(), ativo = true)
+        }
     }
 }
 

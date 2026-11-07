@@ -4,6 +4,7 @@ import br.com.talisson.entrevias.domain.AvisoApi
 import br.com.talisson.entrevias.domain.CancelamentoPedido
 import br.com.talisson.entrevias.domain.CupomPedido
 import br.com.talisson.entrevias.domain.EscolhasPedido
+import br.com.talisson.entrevias.domain.LinkDoComprovante
 import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.RespostaChamado
 import br.com.talisson.entrevias.domain.NovaAvaliacao
@@ -105,6 +106,26 @@ fun Route.rotasDeCompra() {
         val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
         val p = call.corpo<CancelamentoPedido>() ?: CancelamentoPedido()
         call.regra { Compras.cancelar(u.id, id, p.motivo) }
+    }
+
+    // Comprovante: o conteúdo (tela e texto) e o link temporário do PDF. O PDF em si abre sem login, só com o token do link.
+    get("/api/pedidos/{id}/comprovante") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id() ?: return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { Comprovantes.montar(u.id, id) }
+    }
+    post("/api/pedidos/{id}/comprovante/link") {
+        val u = call.exigeLogin() ?: return@post
+        if (!call.limitar(Limites.comprovantePorUsuario, u.id.toString())) return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { LinkDoComprovante("/comprovante/${Comprovantes.link(u.id, id)}.pdf", Comprovantes.VALIDADE_SEG) }
+    }
+    get("/comprovante/{arquivo}") {
+        val token = call.parameters["arquivo"].orEmpty().removeSuffix(".pdf")
+        val pdf = Comprovantes.pdf(token) ?: return@get call.erro(HttpStatusCode.NotFound, "Link inválido ou vencido.")
+        call.response.header(HttpHeaders.CacheControl, "no-store")
+        call.response.header(HttpHeaders.ContentDisposition, "inline; filename=\"comprovante.pdf\"")
+        call.respondBytes(pdf, ContentType.Application.Pdf)
     }
 
     get("/api/notificacoes") { val u = call.exigeLogin() ?: return@get; call.respond(Notificacoes.lista(u.id)) }

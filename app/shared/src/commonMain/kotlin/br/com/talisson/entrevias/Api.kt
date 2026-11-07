@@ -4,6 +4,8 @@ import br.com.talisson.entrevias.domain.AvisoApi
 import br.com.talisson.entrevias.domain.InfraTerminal
 import br.com.talisson.entrevias.domain.Avaliacao
 import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.Comprovante
+import br.com.talisson.entrevias.domain.LinkDoComprovante
 import br.com.talisson.entrevias.domain.OcorrenciaPedido
 import br.com.talisson.entrevias.domain.OcorrenciaResultado
 import br.com.talisson.entrevias.domain.RespostaChamado
@@ -166,6 +168,10 @@ class Api(private val base: String = urlBase()) {
     suspend fun gestorChamados(token: String): Resp<List<Chamado>> = chamar { http.get("$base/api/gestor/chamados") { auth(token) } }
     suspend fun responderChamado(token: String, id: Int, texto: String): Resp<Chamado> = chamar { http.post("$base/api/gestor/chamados/$id/resposta") { auth(token); json(RespostaChamado(texto)) } }
     suspend fun gestorReclamacoes(token: String): Resp<List<Avaliacao>> = chamar { http.get("$base/api/gestor/reclamacoes") { auth(token) } }
+    suspend fun comprovante(token: String, id: Int): Resp<Comprovante> = chamar { http.get("$base/api/pedidos/$id/comprovante") { auth(token) } }
+    suspend fun linkDoComprovante(token: String, id: Int): Resp<LinkDoComprovante> = chamar { http.post("$base/api/pedidos/$id/comprovante/link") { auth(token) } }
+    /** Endereço completo de um caminho do servidor (o PDF abre no navegador do aparelho). */
+    fun enderecoDe(caminho: String) = base + caminho
     suspend fun avisos(token: String): Resp<List<Notificacao>> = chamar { http.get("$base/api/notificacoes") { auth(token) } }
     suspend fun marcarAvisosLidos(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/notificacoes/lidas") { auth(token) } }
 }
