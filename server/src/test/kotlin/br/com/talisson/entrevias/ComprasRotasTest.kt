@@ -60,6 +60,9 @@ class ComprasRotasTest {
     /** i-ésima poltrona livre (nem simulada como ocupada, nem PcD) da viagem; i começa em 0. */
     private fun livre(i: Int, v: Int = simples.id) = (1..40).filter { it !in Compras.ocupadasSimuladas(v) && it !in listOf(1, 5) && it !in reservadasNoInicio[v].orEmpty() }[i]
 
+    /** Poltronas livres AGORA (nem simuladas, nem PcD, nem reservadas por outra classe de teste: o banco é um só na execução). */
+    private fun livresAgora(v: Int) = (1..40).filter { it !in Compras.ocupadasSimuladas(v) && it !in listOf(1, 5) && it !in reservasDe(v)[v].orEmpty() }
+
     /** Poltronas já reservadas por OUTRAS classes de teste (o banco é um só) quando este teste começou: `livre()` as evita e continua estável. */
     private var reservadasNoInicio: Map<Int, Set<Int>> = emptyMap()
     private fun reservasDe(vararg ids: Int) = ids.associateWith { v ->
@@ -178,7 +181,7 @@ class ComprasRotasTest {
 
     @Test fun escolherReservaPor15MinutoEPedeAQuantidadeCerta() = comApp {
         val p = pessoa(); val ped = client.novoPedido(p, pax = listOf(p.adulto, p.crianca))
-        val livres = (1..40).filter { it !in Compras.ocupadasSimuladas(simples.id) && it !in listOf(1, 5) }
+        val livres = livresAgora(simples.id)
         assertEquals(HttpStatusCode.BadRequest, client.poltronas(p, ped, listOf(livres[0])).status, "faltou uma")
         assertEquals(HttpStatusCode.BadRequest, client.poltronas(p, ped, listOf(livres[0], livres[0])).status, "repetida")
         assertEquals(HttpStatusCode.BadRequest, client.poltronas(p, ped, listOf(0, 41)).status, "fora do mapa")
@@ -194,7 +197,7 @@ class ComprasRotasTest {
 
     @Test fun duasPessoasDisputandoAMesmaPoltronaSoUmaLeva() = comApp {
         val a = pessoa(); val b = pessoa(); val pa = client.novoPedido(a); val pb = client.novoPedido(b)
-        val livre = (1..40).first { it !in Compras.ocupadasSimuladas(simples.id) && it !in listOf(1, 5) }
+        val livre = livresAgora(simples.id).first()
         assertEquals(HttpStatusCode.OK, client.poltronas(a, pa, listOf(livre)).status)
         val r = client.poltronas(b, pb, listOf(livre))
         assertEquals(HttpStatusCode.Conflict, r.status); assertTrue("ocupada" in erroDe(r.bodyAsText()))
@@ -238,7 +241,7 @@ class ComprasRotasTest {
 
     @Test fun cartaoAprovadoPagaEmiteBilhetesEAvisa() = comApp {
         val p = pessoa(); val ped = client.novoPedido(p, pax = listOf(p.adulto, p.idoso, p.colo))
-        val livres = (1..40).filter { it !in Compras.ocupadasSimuladas(simples.id) && it !in listOf(1, 5) }
+        val livres = livresAgora(simples.id)
         client.poltronas(p, ped, listOf(livres[0], livres[1]))
         val r = client.cartao(p, ped, parcelas = 1)
         assertEquals(HttpStatusCode.Created, r.status)
@@ -256,7 +259,7 @@ class ComprasRotasTest {
 
     @Test fun doisTrechosEmitemBilhetesPorTrechoEPassageiro() = comApp {
         val p = pessoa(); val ped = client.novoPedido(p, listOf(par.first.id, par.second.id), listOf(p.adulto, p.crianca))
-        fun livres(v: Int) = (1..40).filter { it !in Compras.ocupadasSimuladas(v) && it !in listOf(1, 5) }.take(2)
+        fun livres(v: Int) = livresAgora(v).take(2)
         assertEquals(HttpStatusCode.OK, client.poltronas(p, ped, livres(par.first.id), livres(par.second.id)).status)
         client.cartao(p, ped)
         val pago = client.pedido(p, ped.id)

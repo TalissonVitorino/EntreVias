@@ -51,7 +51,7 @@ fun TelaGestao(e: Estado) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AbaGestao.entries.forEach { a ->
                 val n = when (a) { AbaGestao.AJUDA -> e.gestorChamados.count { it.status == "aberto" }; AbaGestao.RECLAMACOES -> e.gestorReclamacoes.size; else -> 0 }
-                Botao(if (n > 0) "${a.rotulo} ($n)" else a.rotulo, { aba = a }, Modifier.weight(1f), ativo = aba == a, pequeno = true)
+                Botao(if (n > 0) "${a.rotulo} ($n)" else a.rotulo, { aba = a; e.gestorAviso = null }, Modifier.weight(1f), ativo = aba == a, pequeno = true)
             }
         }
         e.gestorAviso?.let { T("✓  $it", 14, FontWeight.SemiBold, c.ok) }
