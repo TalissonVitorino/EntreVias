@@ -240,5 +240,20 @@ class ContasRotasTest {
         assertTrue(alvo.nome in empresasNaBusca())
     }
 
+    @Test fun promoverContaJaCadastradaTomaASenhaEEncerraAsSessoesDoInvasor() = comApp {
+        // um invasor se cadastra com o e-mail do gestor ANTES de o operador configurar GESTOR_EMAIL
+        val e = email()
+        val invasor = client.json(HttpMethod.Post, "/api/cadastro", pedido(email = e, senha = "senha-do-invasor-1")).sessao().token
+        assertEquals(HttpStatusCode.OK, client.json(HttpMethod.Get, "/api/perfil", token = invasor).status)
+
+        Contas.garantirGestor(e, "senha-do-operador-1")
+
+        assertEquals(HttpStatusCode.Unauthorized, client.json(HttpMethod.Get, "/api/perfil", token = invasor).status, "sessão do invasor encerrada")
+        assertEquals(HttpStatusCode.Unauthorized, client.json(HttpMethod.Post, "/api/login", LoginPedido(e, "senha-do-invasor-1")).status, "senha do invasor não vale mais")
+        val operador = client.json(HttpMethod.Post, "/api/login", LoginPedido(e, "senha-do-operador-1"))
+        assertEquals(HttpStatusCode.OK, operador.status)
+        assertEquals(PAPEL_GESTOR, operador.sessao().usuario.papel)
+    }
+
     private fun runBlockingBusca(): List<Viagem> = Banco.viagens(java.time.LocalDate.of(2026, 11, 20), 1)
 }

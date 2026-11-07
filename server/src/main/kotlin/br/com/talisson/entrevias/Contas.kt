@@ -169,7 +169,11 @@ object Contas {
         buscar(c, id)
     }
 
-    /** Cria ou promove o gestor a partir de variáveis de ambiente. Sem as duas variáveis, não cria ninguém. */
+    /**
+     * Cria ou promove o gestor a partir de variáveis de ambiente. Sem as duas variáveis, não cria ninguém.
+     * Se o e-mail já tinha conta (alguém pode ter se cadastrado antes com ele, pois o cadastro não confirma o e-mail),
+     * a senha passa a ser a das variáveis e todas as sessões dessa conta são encerradas: quem manda é o operador.
+     */
     fun garantirGestor(email: String?, senha: String?) {
         if (email.isNullOrBlank() || senha.isNullOrBlank()) return
         if (Validacao.email(email) != null || Validacao.senha(senha) != null) return
@@ -177,8 +181,15 @@ object Contas {
         val existe = Banco.conexao().use { c ->
             c.prepareStatement("select count(*) from usuario where email = ?").use { it.setString(1, e); it.executeQuery().use { rs -> rs.next(); rs.getInt(1) > 0 } }
         }
-        if (existe) Banco.conexao().use { c -> c.prepareStatement("update usuario set papel = ? where email = ?").use { it.setString(1, PAPEL_GESTOR); it.setString(2, e); it.executeUpdate() } }
-        else cadastrar(CadastroPedido("Gestor", e, senha = senha, aceitaTermos = true), PAPEL_GESTOR)
+        if (existe) {
+            val hash = hashSenha(senha)
+            Banco.conexao().use { c ->
+                c.prepareStatement("delete from sessao where usuario_id in (select id from usuario where email = ?)").use { it.setString(1, e); it.executeUpdate() }
+                c.prepareStatement("update usuario set papel = ?, senha_hash = ?, excluido_em = null where email = ?").use {
+                    it.setString(1, PAPEL_GESTOR); it.setString(2, hash); it.setString(3, e); it.executeUpdate()
+                }
+            }
+        } else cadastrar(CadastroPedido("Gestor", e, senha = senha, aceitaTermos = true), PAPEL_GESTOR)
     }
 
     // ---------- US7: empresas parceiras ----------
