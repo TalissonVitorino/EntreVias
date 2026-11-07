@@ -9,6 +9,7 @@ import br.com.talisson.entrevias.domain.Usuario
 import br.com.talisson.entrevias.domain.Validacao
 import io.ktor.http.*
 import io.ktor.server.application.*
+import io.ktor.server.plugins.origin
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -17,6 +18,13 @@ private suspend fun ApplicationCall.erro(status: HttpStatusCode, mensagem: Strin
 
 private fun ApplicationCall.token(): String? =
     request.headers[HttpHeaders.Authorization]?.takeIf { it.startsWith("Bearer ") }?.removePrefix("Bearer ")?.trim()
+
+/** Quem fez o pedido, para os limites de taxa. Ver [Limites] sobre o X-Forwarded-For. */
+private fun ApplicationCall.chaveDoCliente(): String {
+    val direto = request.origin.remoteHost
+    if (!Limites.confiarNoProxy) return direto
+    return request.headers["X-Forwarded-For"]?.split(',')?.lastOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: direto
+}
 
 /** Corpo JSON inválido ou de outro formato vira `null` (e o chamador responde 400), nunca 500. */
 private suspend inline fun <reified T : Any> ApplicationCall.corpo(): T? = runCatching { receiveNullable<T>() }.getOrNull()
@@ -35,6 +43,11 @@ private suspend fun ApplicationCall.exigeGestor(): Usuario? {
 fun Route.rotasDeConta() {
     // US8: cadastro. Erro de duplicidade é genérico para não revelar quais e-mails existem.
     post("/api/cadastro") {
+        val espera = Limites.cadastro.tentar(call.chaveDoCliente()) ?: Limites.cadastroGlobal.tentar("*")
+        if (espera != null) {
+            call.response.header(HttpHeaders.RetryAfter, espera.toString())
+            return@post call.erro(HttpStatusCode.TooManyRequests, "Muitas tentativas. Tente de novo mais tarde.")
+        }
         val p = call.corpo<CadastroPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
         Validacao.cadastro(p)?.let { return@post call.erro(HttpStatusCode.BadRequest, it) }
         when (val r = Contas.cadastrar(p)) {

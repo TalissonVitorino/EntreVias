@@ -26,8 +26,17 @@ class ContasRotasTest {
     private val relogioReal = Contas.agora
     private val iteracoesReais = Contas.iteracoes
 
-    @BeforeTest fun preparar() { BancoDeTeste.pronto; Contas.iteracoes = 1_000 }
-    @AfterTest fun restaurar() { Contas.agora = relogioReal; Contas.iteracoes = iteracoesReais }
+    private val limitesReais = Triple(Limites.cadastro, Limites.cadastroGlobal, Limites.confiarNoProxy)
+
+    // Limite folgado nos testes comuns, senão eles bloqueariam uns aos outros (todos vêm do mesmo "cliente").
+    @BeforeTest fun preparar() {
+        BancoDeTeste.pronto; Contas.iteracoes = 1_000
+        Limites.cadastro = LimiteDeTaxa(1_000_000, 3600); Limites.cadastroGlobal = LimiteDeTaxa(1_000_000, 3600); Limites.confiarNoProxy = false
+    }
+    @AfterTest fun restaurar() {
+        Contas.agora = relogioReal; Contas.iteracoes = iteracoesReais
+        Limites.cadastro = limitesReais.first; Limites.cadastroGlobal = limitesReais.second; Limites.confiarNoProxy = limitesReais.third
+    }
 
     private companion object { val n = AtomicInteger() }
     private fun email() = "pessoa${n.incrementAndGet()}@teste.com"
@@ -253,6 +262,55 @@ class ContasRotasTest {
         val operador = client.json(HttpMethod.Post, "/api/login", LoginPedido(e, "senha-do-operador-1"))
         assertEquals(HttpStatusCode.OK, operador.status)
         assertEquals(PAPEL_GESTOR, operador.sessao().usuario.papel)
+    }
+
+    // ---------- limite do cadastro ----------
+
+    @Test fun cadastroTemLimiteDePedidosPorCliente() = comApp {
+        Contas.agora = { 7_000_000L }
+        Limites.cadastro = LimiteDeTaxa(max = 2, janelaSeg = 3600)
+        assertEquals(HttpStatusCode.Created, client.json(HttpMethod.Post, "/api/cadastro", pedido()).status)
+        assertEquals(HttpStatusCode.BadRequest, client.json(HttpMethod.Post, "/api/cadastro", pedido(senha = "curta")).status, "pedido inválido também conta")
+        val bloqueado = client.json(HttpMethod.Post, "/api/cadastro", pedido())
+        assertEquals(HttpStatusCode.TooManyRequests, bloqueado.status)
+        assertEquals("3600", bloqueado.headers[HttpHeaders.RetryAfter])
+        Contas.agora = { 7_000_000L + 3601 }
+        assertEquals(HttpStatusCode.Created, client.json(HttpMethod.Post, "/api/cadastro", pedido()).status, "libera depois da janela")
+    }
+
+    @Test fun cabecalhoForjadoNaoBurlaOLimiteESoValeComProxyConfiavel() = comApp {
+        Contas.agora = { 8_000_000L }
+        Limites.cadastro = LimiteDeTaxa(max = 1, janelaSeg = 3600)
+        suspend fun cadastrar(xff: String) = client.request("/api/cadastro") {
+            method = HttpMethod.Post; header("X-Forwarded-For", xff); contentType(ContentType.Application.Json); setBody(encode(pedido()))
+        }.status
+
+        // sem confiar no proxy, o cabeçalho é ignorado: o segundo pedido bate no mesmo cliente
+        assertEquals(HttpStatusCode.Created, cadastrar("1.1.1.1"))
+        assertEquals(HttpStatusCode.TooManyRequests, cadastrar("2.2.2.2"))
+
+        // confiando no proxy, vale o ÚLTIMO IP (o que o proxy viu); a parte da frente é forjável e não ajuda
+        Limites.confiarNoProxy = true; Limites.cadastro = LimiteDeTaxa(max = 1, janelaSeg = 3600)
+        assertEquals(HttpStatusCode.Created, cadastrar("6.6.6.6, 9.9.9.9"))
+        assertEquals(HttpStatusCode.TooManyRequests, cadastrar("7.7.7.7, 9.9.9.9"), "mesmo IP final, outro prefixo forjado")
+        assertEquals(HttpStatusCode.Created, cadastrar("6.6.6.6, 8.8.8.8"), "outro IP final é outro cliente")
+    }
+
+    @Test fun limiteGlobalPegaMuitosClientesDiferentes() = comApp {
+        Contas.agora = { 9_000_000L }
+        Limites.confiarNoProxy = true; Limites.cadastroGlobal = LimiteDeTaxa(max = 2, janelaSeg = 3600)
+        suspend fun cadastrar(ip: String) = client.request("/api/cadastro") {
+            method = HttpMethod.Post; header("X-Forwarded-For", ip); contentType(ContentType.Application.Json); setBody(encode(pedido()))
+        }.status
+        assertEquals(HttpStatusCode.Created, cadastrar("10.0.0.1"))
+        assertEquals(HttpStatusCode.Created, cadastrar("10.0.0.2"))
+        assertEquals(HttpStatusCode.TooManyRequests, cadastrar("10.0.0.3"))
+    }
+
+    @Test fun loginNaoEhAfetadoPeloLimiteDeCadastro() = comApp {
+        val e = email(); client.json(HttpMethod.Post, "/api/cadastro", pedido(email = e))
+        Limites.cadastro = LimiteDeTaxa(max = 1, janelaSeg = 3600); Limites.cadastro.tentar("localhost")
+        assertEquals(HttpStatusCode.OK, client.json(HttpMethod.Post, "/api/login", LoginPedido(e, "senha-segura-1")).status)
     }
 
     private fun runBlockingBusca(): List<Viagem> = Banco.viagens(java.time.LocalDate.of(2026, 11, 20), 1)
