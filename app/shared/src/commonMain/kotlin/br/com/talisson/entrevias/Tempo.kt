@@ -25,6 +25,19 @@ object Tempo {
         return Data(ano, mes, dia)
     }
 
+    /** Dias desde 1970 de uma data civil (o inverso de [data]). Serve para contar quantos dias separam duas datas. */
+    fun dias(d: Data): Long {
+        val y = (if (d.mes <= 2) d.ano - 1 else d.ano).toLong()
+        val era = y.floorDiv(400L)
+        val yoe = y - era * 400
+        val mp = (if (d.mes > 2) d.mes - 3 else d.mes + 9).toLong()
+        val doy = (153 * mp + 2) / 5 + d.dia - 1
+        val doe = yoe * 365 + yoe / 4 - yoe / 100 + doy
+        return era * 146_097 + doe - 719_468
+    }
+
+    fun diasEntre(de: Data, ate: Data): Int = (dias(ate) - dias(de)).toInt()
+
     fun hora(epochSeg: Long) = hora(minutoDoDia(epochSeg))
     fun dataHora(epochSeg: Long) = "${data(epochSeg).br().dropLast(5)} · ${hora(epochSeg)}"
 

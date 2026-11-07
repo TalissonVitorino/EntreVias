@@ -27,7 +27,7 @@ class ComprasRotasTest {
     @BeforeTest fun preparar() {
         BancoDeTeste.pronto; Contas.iteracoes = 1_000; Contas.agora = { hoje }; Email.emProducao = false
         simples = candidatas[proxima.getAndIncrement() % candidatas.size]
-        reservadasNoInicio = reservasDe(simples.id, par.first.id, par.second.id)
+        reservadasNoInicio = reservasDe(simples.id, par.first.id, par.second.id, idaVolta.first.id, idaVolta.second.id)
         val folga = { LimiteDeTaxa(1_000_000, 3600) }
         Limites.cadastro = folga(); Limites.cadastroGlobal = folga(); Limites.pedidoPorUsuario = folga(); Limites.cupomPorUsuario = folga()
     }
@@ -49,9 +49,12 @@ class ComprasRotasTest {
     /** Um trecho no futuro e um par encadeado (duas viagens ligadas por uma conexão válida), tirados da base de teste. */
     // BancoDeTeste.pronto PRIMEIRO: ele fixa o caminho do banco de teste antes de o Banco ler o caminho (uma vez só).
     private val viagens = run { BancoDeTeste.pronto; Banco.viagens(LocalDate.of(2026, 11, 20), 2) }
+    /** Ida e volta: uma viagem A→B e outra B→A que sai depois da chegada da primeira (outro dia). */
+    private val idaVolta by lazy { viagens.firstNotNullOf { a -> viagens.firstOrNull { b -> b.origem == a.destino && b.destino == a.origem && b.saidaMin >= a.chegadaMin + 600 }?.let { a to it } } }
+
     // Cada teste usa a sua própria viagem: o banco é um só na execução e as poltronas confirmadas de um teste sobrariam para o outro.
     private lateinit var simples: Viagem
-    private val candidatas by lazy { viagens.filter { it.precoCentavos > 0 && it.id != par.first.id && it.id != par.second.id } }
+    private val candidatas by lazy { viagens.filter { it.precoCentavos > 0 && it.id != par.first.id && it.id != par.second.id && it.id != idaVolta.first.id && it.id != idaVolta.second.id } }
     private val par = viagens.firstNotNullOf { a -> viagens.firstOrNull { b -> b.origem == a.destino && b.destino != a.origem && b.saidaMin - a.chegadaMin in 30..480 }?.let { a to it } }
 
     /** i-ésima poltrona livre (nem simulada como ocupada, nem PcD) da viagem; i começa em 0. */
@@ -394,5 +397,46 @@ class ComprasRotasTest {
         Contas.agora = { futura.saidaEm + 1 }
         assertEquals(emptySet(), ids("proximas")); assertEquals(setOf(futura.id), ids("passadas"))
         assertEquals(setOf(futura.id, cancelada.id), ids("qualquer-coisa"), "filtro desconhecido = todas")
+    }
+
+    // ---------- B1: ida e volta ----------
+
+    private suspend fun HttpClient.criarIdaVolta(p: Pessoa, ida: List<Int>, volta: List<Int>) =
+        req(HttpMethod.Post, "/api/pedidos", p.token, json.encodeToString(NovoPedido(ida, listOf(p.adulto), viagemIdsVolta = volta)))
+
+    @Test fun idaEVoltaSaoUmaCompraSoComOsTrechosMarcados() = comApp {
+        val p = pessoa(); val (i, v) = idaVolta
+        val r = client.criarIdaVolta(p, listOf(i.id), listOf(v.id)); assertEquals(HttpStatusCode.Created, r.status, r.bodyAsText())
+        val ped = json.decodeFromString<Pedido>(r.bodyAsText())
+        assertEquals(listOf(false, true), ped.trechos.map { it.volta }); assertTrue(ped.ehIdaEVolta); assertEquals(i.destino, ped.destinoDaIda)
+        assertEquals(i.precoCentavos + v.precoCentavos, ped.totais.subtotalCentavos, "a pessoa paga ida + volta numa compra só")
+    }
+
+    @Test fun voltaPrecisaSairDoDestinoDaIdaDepoisDaChegada() = comApp {
+        val p = pessoa(); val (i, v) = idaVolta
+        val outraOrigem = viagens.first { it.origem != i.destino && it.id != i.id && it.saidaMin >= i.chegadaMin + 120 }   // sai tarde o bastante: só a ORIGEM está errada
+        assertEquals(HttpStatusCode.Conflict, client.criarIdaVolta(p, listOf(i.id), listOf(outraOrigem.id)).status, "a volta não sai do destino da ida")
+        val cedo = viagens.first { it.origem == i.destino && it.saidaMin < i.chegadaMin }
+        val r = client.criarIdaVolta(p, listOf(i.id), listOf(cedo.id))
+        assertEquals(HttpStatusCode.Conflict, r.status); assertTrue("depois da chegada" in erroDe(r.bodyAsText()), "volta que sai antes de a ida chegar")
+    }
+
+    @Test fun idaEVoltaTemLimiteDeTrechosESemRepetir() = comApp {
+        val p = pessoa(); val (i, v) = idaVolta
+        assertEquals(HttpStatusCode.BadRequest, client.criarIdaVolta(p, listOf(i.id), listOf(v.id, v.id)).status, "trecho repetido")
+        assertEquals(HttpStatusCode.BadRequest, client.criarIdaVolta(p, listOf(i.id), listOf(i.id)).status, "o mesmo trecho na ida e na volta")
+        assertEquals(HttpStatusCode.BadRequest, client.criarIdaVolta(p, listOf(i.id), List(4) { v.id + it }).status, "mais de 3 trechos de volta")
+        assertEquals(HttpStatusCode.BadRequest, client.criarIdaVolta(p, emptyList(), listOf(v.id)).status, "sem ida não há volta")
+    }
+
+    @Test fun idaEVoltaPagaEmiteBilhetesDosDoisSentidosECancelaJunto() = comApp {
+        val p = pessoa(); val (i, v) = idaVolta
+        val ped = json.decodeFromString<Pedido>(client.criarIdaVolta(p, listOf(i.id), listOf(v.id)).bodyAsText())
+        assertEquals(HttpStatusCode.OK, client.poltronas(p, ped, listOf(livre(0, i.id)), listOf(livre(0, v.id))).status)
+        assertEquals(HttpStatusCode.Created, client.cartao(p, ped).status)
+        val pago = client.pedido(p, ped.id)
+        assertEquals(2, pago.bilhetes.size); assertEquals(listOf(false, true), pago.trechos.map { it.volta })
+        val c = json.decodeFromString<Pedido>(client.req(HttpMethod.Post, "/api/pedidos/${ped.id}/cancelar", p.token, "{}").bodyAsText())
+        assertEquals(StatusPedido.CANCELADO, c.status); assertTrue(c.trechos.all { it.poltronas.isEmpty() }, "os dois sentidos voltaram à venda")
     }
 }

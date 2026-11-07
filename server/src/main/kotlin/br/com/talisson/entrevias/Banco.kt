@@ -83,6 +83,7 @@ object Banco {
         val sql = Banco::class.java.getResourceAsStream("/migracao-compra.sql")!!.bufferedReader().readText()
         sql.lines().map { it.substringBefore("--") }.joinToString("\n").split(";").map { it.trim() }.filter { it.isNotEmpty() }
             .forEach { cmd -> c.createStatement().use { it.execute(cmd) } }
+        acrescentar("pedido_trecho", "volta", "INTEGER NOT NULL DEFAULT 0 CHECK (volta IN (0,1))")   // B1: ida e volta numa compra só
     }
 
     private fun criarEsquema(c: Connection) {

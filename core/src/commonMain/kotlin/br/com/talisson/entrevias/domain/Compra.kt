@@ -83,6 +83,8 @@ data class PedidoTrecho(
     /** D4: atraso (ou mudança de horário) que o gestor registrou, em minutos. Negativo = saiu mais cedo. */
     val atrasoMin: Int = 0,
     val cancelada: Boolean = false,
+    /** B1: este trecho é da volta (a ida e a volta são uma compra só). */
+    val volta: Boolean = false,
 ) {
     val saidaReal get() = saidaEm + atrasoMin * 60L
     val chegadaReal get() = chegadaEm + atrasoMin * 60L
@@ -112,11 +114,14 @@ data class Pedido(
     val bilhetes: List<Bilhete> = emptyList(),
 ) {
     val saidaEm get() = trechos.minOf { it.saidaReal }
+    val ehIdaEVolta get() = trechos.any { it.volta }
+    /** Onde a ida termina (e a volta começa). */
+    val destinoDaIda get() = trechos.last { !it.volta }.destino
     val poltronasCompletas get() = trechos.all { it.poltronas.size == RegrasDePreco.poltronasNecessarias(passageiros.map { p -> p.categoria }) }
 }
 
 @Serializable
-data class NovoPedido(val viagemIds: List<Int>, val passageiroIds: List<Int>, val cupom: String? = null)
+data class NovoPedido(val viagemIds: List<Int>, val passageiroIds: List<Int>, val cupom: String? = null, val viagemIdsVolta: List<Int> = emptyList())
 
 @Serializable
 data class CupomPedido(val codigo: String)

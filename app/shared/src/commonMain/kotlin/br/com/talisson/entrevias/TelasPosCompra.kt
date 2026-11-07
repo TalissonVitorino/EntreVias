@@ -23,7 +23,7 @@ import br.com.talisson.entrevias.domain.Pedido
 import br.com.talisson.entrevias.domain.StatusPedido
 import br.com.talisson.entrevias.domain.TipoNotificacao
 
-private fun Estado.rotaDe(p: Pedido) = "${cidade(p.trechos.first().origem)} → ${cidade(p.trechos.last().destino)}"
+private fun Estado.rotaDe(p: Pedido) = if (p.ehIdaEVolta) "${cidade(p.trechos.first().origem)} ⇄ ${cidade(p.destinoDaIda)}" else "${cidade(p.trechos.first().origem)} → ${cidade(p.trechos.last().destino)}"
 
 private fun rotuloStatus(p: Pedido) = when (p.status) { StatusPedido.PAGO -> "Paga"; StatusPedido.CANCELADO -> "Cancelada"; StatusPedido.EXPIRADO -> "Expirada"; else -> "Em aberto" }
 
@@ -109,7 +109,7 @@ fun TelaCompraDetalhe(e: Estado) {
             T("Trechos", 20, FontWeight.Bold, ls = -0.4f)
             p.trechos.forEach { t ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(Modifier.weight(1f)) { T("${e.cidade(t.origem)} → ${e.cidade(t.destino)}", 16, FontWeight.SemiBold); T("${Tempo.dataHora(t.saidaEm)} · ${t.empresa}", 13, cor = c.muted) }
+                    Column(Modifier.weight(1f)) { T("${if (p.ehIdaEVolta) (if (t.volta) "Volta · " else "Ida · ") else ""}${e.cidade(t.origem)} → ${e.cidade(t.destino)}", 16, FontWeight.SemiBold); T("${Tempo.dataHora(t.saidaEm)} · ${t.empresa}", 13, cor = c.muted) }
                     T(centavosParaReais(t.precoUnitCentavos), 15, FontWeight.SemiBold)
                 }
             }

@@ -99,6 +99,9 @@ class Estado(
     var origem by mutableStateOf<String?>(null)
     var destino by mutableStateOf<String?>(null)
     var data by mutableStateOf(DATA_INICIAL)
+    /** B1: ida e volta. A volta precisa ser em outro dia, depois da ida. */
+    var idaEVolta by mutableStateOf(false)
+    var dataVolta by mutableStateOf(DATA_INICIAL.plusDias(3))
     var pax by mutableStateOf(1)
 
     // resultado exibido (guardado no momento da busca)
@@ -109,6 +112,9 @@ class Estado(
     var rDestino by mutableStateOf("")
     var rData by mutableStateOf(DATA_INICIAL)
     var rPax by mutableStateOf(1)
+    var rDataVolta by mutableStateOf<Data?>(null)
+    var todasVolta by mutableStateOf<List<Rota>>(emptyList())
+    var voltaEscolhida by mutableStateOf<Rota?>(null)
     var ordem by mutableStateOf(Ordem.MAIS_BARATA)
     /** B2: filtros dos resultados. Vale só para a busca atual e zera numa busca nova. */
     var filtro by mutableStateOf(FiltroDeRotas())
@@ -426,8 +432,9 @@ class Estado(
     fun calcularPedido() {
         val r = compraRota ?: return
         if (paxSelecionados.isEmpty()) { compraErro = "Escolha quem vai viajar."; return }
+        if (rDataVolta != null && voltaEscolhida == null) { compraErro = "Escolha a volta antes de ver o total."; return }
         naCompra { t ->
-            when (val x = api.criarPedido(t, NovoPedido(r.viagens.map { it.id }, paxSelecionados.toList()))) {
+            when (val x = api.criarPedido(t, NovoPedido(r.viagens.map { it.id }, paxSelecionados.toList(), viagemIdsVolta = voltaEscolhida?.viagens?.map { it.id }.orEmpty()))) {
                 is Resp.Ok -> pedido = x.valor
                 is Resp.Falha -> falhouNaCompra(x)
             }
@@ -753,7 +760,8 @@ class Estado(
     /** RF19: nota de risco da rota e de cada conexão (atraso típico fictício, rotulado "simulado"). */
     fun risco(r: Rota): RiscoRota = RiscoConexao.avaliar(r, paramsRisco, AtrasoFicticio) { cidade(it) }
 
-    val podeBuscar get() = origem != null && destino != null && origem != destino
+    val voltaValida get() = !idaEVolta || dataVolta > data
+    val podeBuscar get() = origem != null && destino != null && origem != destino && voltaValida
 
     fun buscar() {
         val o = origem ?: return
@@ -764,7 +772,10 @@ class Estado(
             try {
                 val v = api.viagens(data, 3)
                 val rotas = MotorDeRotas.buscar(o, d, v, params, limite = 200, partida = 0 until 1440)
+                // B1: com ida e volta, busca também o sentido contrário na data da volta
+                val voltas = if (idaEVolta) MotorDeRotas.buscar(d, o, api.viagens(dataVolta, 3), params, limite = 200, partida = 0 until 1440) else emptyList()
                 todas = rotas; rOrigem = o; rDestino = d; rData = data; rPax = pax; filtro = FiltroDeRotas()
+                rDataVolta = dataVolta.takeIf { idaEVolta }; todasVolta = voltas; voltaEscolhida = null
                 base = v; baseData = data; baseCarga = Carga.Pronto
                 selecionadas.clear()
                 ir(Tela.RESULTADOS)
@@ -782,7 +793,15 @@ class Estado(
     }
 
     fun ir(t: Tela) { tela = t; salvoAgora = false; limiteAtingido = false }
-    fun abrirRota(r: Rota, de: Tela = Tela.RESULTADOS) { rotaAtual = r; voltarPara = de; ir(Tela.ROTA) }
+    fun abrirRota(r: Rota, de: Tela = Tela.RESULTADOS) { rotaAtual = r; voltarPara = de; voltaEscolhida = null; ir(Tela.ROTA) }
+
+    /** B1: voltas que saem DEPOIS de a ida chegar (mais a conexão mínima), contando os dias entre as duas datas. */
+    fun opcoesDeVolta(ida: Rota): List<Rota> {
+        val dv = rDataVolta ?: return emptyList()
+        val chegadaIdaAbs = ida.chegadaMin
+        val offsetVolta = Tempo.diasEntre(rData, dv) * 1440
+        return MotorDeRotas.ordenar(todasVolta, ordem).filter { offsetVolta + it.saidaMin >= chegadaIdaAbs + params.minimaMin }.take(8)
+    }
     fun abrirPlano(p: Plano) { rData = p.data; rPax = p.pax; garantirBase(p.data); abrirRota(p.rota, Tela.PLANEJAMENTOS) }
 
     /** O plano B precisa das viagens do dia da rota; ao abrir um planejamento salvo de outro dia, busca de novo. */

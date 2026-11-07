@@ -290,4 +290,12 @@ class CompraEstadoTest {
         val e = estado(); e.abrirAjuda(pedidoPago); e.enviarChamado("Reembolso", ""); esperar { e.chamadoNovo != null }
         e.sair(); assertTrue(e.chamados.isEmpty()); assertNull(e.chamadoNovo); assertNull(e.ajudaPedido); assertNull(e.avaliacaoEnviada)
     }
+
+    @Test fun idaEVoltaMandaOsIdsDaVoltaSeparados() {
+        val volta = Rota(listOf(Viagem(201, "Viação Serra Azul", "Convencional", "FLN", "CWB", 5000, 5200, 7000)))
+        val e = estado(); e.iniciarCompra(rota2); e.rDataVolta = DATA_INICIAL.plusDias(3); e.voltaEscolhida = volta
+        e.alternarPassageiro(1); e.calcularPedido(); esperar { e.pedido != null }
+        val corpo = chamadas("POST", "/api/pedidos").single()
+        assertTrue("\"viagemIds\":[101,102]" in corpo && "\"viagemIdsVolta\":[201]" in corpo, corpo)
+    }
 }

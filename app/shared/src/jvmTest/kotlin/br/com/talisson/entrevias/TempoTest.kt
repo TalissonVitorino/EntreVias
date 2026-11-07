@@ -26,4 +26,21 @@ class TempoTest {
 
     @Test fun dataHoraFormata() = assertEquals("20/11 · 06:30", Tempo.dataHora(epoch(2026, 11, 20, 6, 30)))
     @Test fun contagemNuncaFicaNegativa() { assertEquals("09:48", Tempo.contagem(588)); assertEquals("00:00", Tempo.contagem(-5)); assertEquals("15:00", Tempo.contagem(900)) }
+
+    @Test fun diasEntreDatasBateComAJvm() {
+        var d = java.time.LocalDate.of(2024, 12, 20)
+        repeat(900) { i ->
+            val x = java.time.LocalDate.of(2024, 12, 20).plusDays(i.toLong())
+            assertEquals(i, Tempo.diasEntre(Data(2024, 12, 20), Data(x.year, x.monthValue, x.dayOfMonth)), "$x"); d = x
+        }
+        assertEquals(-3, Tempo.diasEntre(Data(2026, 11, 20), Data(2026, 11, 17)), "para trás também"); assertEquals(0, Tempo.diasEntre(Data(2026, 11, 20), Data(2026, 11, 20)))
+        assertEquals(366, Tempo.diasEntre(Data(2024, 2, 1), Data(2025, 2, 1)), "passa por 29/02/2024"); assertEquals(365, Tempo.diasEntre(Data(2024, 3, 1), Data(2025, 3, 1)), "esse já não passa")
+    }
+
+    @Test fun diasEEpochSaoInversos() {
+        for (dia in listOf(Data(1970, 1, 1), Data(2000, 2, 29), Data(2026, 11, 20), Data(2100, 3, 1))) {
+            val epochMeioDia = Tempo.dias(dia) * 86_400L + 15 * 3600   // 12:00 em Brasília = 15:00 UTC
+            assertEquals(dia, Tempo.data(epochMeioDia))
+        }
+    }
 }

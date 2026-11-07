@@ -57,13 +57,13 @@ object Compras {
         }.groupBy({ it.first }, { it.second })
         return c.prepareStatement(
             """select pt.ordem, v.id, e.nome, l.categoria, o.codigo, d.codigo, v.saida_em, v.chegada_em, pt.preco_unit,
-                      coalesce(ve.atraso_min, 0), coalesce(ve.cancelada, 0)
+                      coalesce(ve.atraso_min, 0), coalesce(ve.cancelada, 0), pt.volta
                from pedido_trecho pt join viagem v on v.id = pt.viagem_id left join viagem_estado ve on ve.viagem_id = v.id join linha l on l.id = v.linha_id
                join empresa e on e.id = l.empresa_id join terminal o on o.id = l.origem_terminal_id join terminal d on d.id = l.destino_terminal_id
                where pt.pedido_id = ? order by pt.ordem""",
         ).use {
             it.setInt(1, pedidoId)
-            it.executeQuery().use { rs -> rs.lista { r -> PedidoTrecho(r.getInt(1), r.getInt(2), r.getString(3), r.getString(4), r.getString(5), r.getString(6), r.getLong(7), r.getLong(8), r.getInt(9), poltronas[r.getInt(2)].orEmpty(), plataforma(r.getInt(2)), r.getInt(10), r.getInt(11) == 1) } }
+            it.executeQuery().use { rs -> rs.lista { r -> PedidoTrecho(r.getInt(1), r.getInt(2), r.getString(3), r.getString(4), r.getString(5), r.getString(6), r.getLong(7), r.getLong(8), r.getInt(9), poltronas[r.getInt(2)].orEmpty(), plataforma(r.getInt(2)), r.getInt(10), r.getInt(11) == 1, r.getInt(12) == 1) } }
         }
     }
 
@@ -133,10 +133,11 @@ object Compras {
 
     fun criar(usuarioId: Int, p: NovoPedido): Pedido {
         if (!Psp.disponivel) throw ErroDeCompra(503, "A compra está indisponível no momento.")
-        if (p.viagemIds.isEmpty() || p.viagemIds.size > 3 || p.viagemIds.distinct().size != p.viagemIds.size) throw ErroDeCompra(400, "Escolha de 1 a 3 trechos.")
+        val todos = p.viagemIds + p.viagemIdsVolta
+        if (p.viagemIds.isEmpty() || p.viagemIds.size > 3 || p.viagemIdsVolta.size > 3 || todos.distinct().size != todos.size) throw ErroDeCompra(400, "Escolha de 1 a 3 trechos de ida e até 3 de volta.")
         if (p.passageiroIds.isEmpty() || p.passageiroIds.size > RegrasDePreco.MAX_PASSAGEIROS || p.passageiroIds.distinct().size != p.passageiroIds.size) throw ErroDeCompra(400, "Escolha de 1 a ${RegrasDePreco.MAX_PASSAGEIROS} passageiros.")
         return Banco.conexao().use { c ->
-            val viagens = p.viagemIds.map { id ->
+            val viagens = todos.map { id ->
                 c.prepareStatement(
                     """select v.id, o.codigo, d.codigo, v.saida_em, v.chegada_em, v.preco_centavos from viagem v join linha l on l.id = v.linha_id
                        join empresa e on e.id = l.empresa_id and e.ativa = 1 join terminal o on o.id = l.origem_terminal_id join terminal d on d.id = l.destino_terminal_id where v.id = ?""",
@@ -145,7 +146,10 @@ object Compras {
             }
             if (viagens.first().saidaEm <= Contas.agora()) throw ErroDeCompra(409, "Essa viagem já saiu.")
             val minima = Banco.parametros().minimaMin * 60L
-            viagens.zipWithNext().forEach { (a, b) -> if (a.destino != b.origem || b.saidaEm - a.chegadaEm < minima) throw ErroDeCompra(409, "Esses trechos não formam uma conexão possível.") }
+            viagens.zipWithNext().forEachIndexed { i, (a, b) ->
+                val naVolta = i + 1 == p.viagemIds.size   // a "conexão" entre a ida e a volta é a pessoa ficar no destino: só precisa da volta sair depois da chegada
+                if (a.destino != b.origem || b.saidaEm - a.chegadaEm < minima) throw ErroDeCompra(409, if (naVolta) "A volta precisa sair do destino da ida, depois da chegada." else "Esses trechos não formam uma conexão possível.")
+            }
 
             val passageiros = p.passageiroIds.map { id ->
                 c.prepareStatement("select nome, idade, documento_final, acessibilidade from passageiro where id = ? and usuario_id = ?").use {
@@ -171,7 +175,7 @@ object Compras {
                     it.executeUpdate(); it.generatedKeys.use { rs -> rs.next(); rs.getInt(1) }
                 }
                 c.prepareStatement("update pedido set codigo = ? where id = ?").use { it.setString(1, "EV-%04d".format(4800 + id)); it.setInt(2, id); it.executeUpdate() }
-                viagens.forEachIndexed { i, v -> c.prepareStatement("insert into pedido_trecho (pedido_id, ordem, viagem_id, preco_unit) values (?,?,?,?)").use { it.setInt(1, id); it.setInt(2, i + 1); it.setInt(3, v.id); it.setInt(4, v.preco); it.executeUpdate() } }
+                viagens.forEachIndexed { i, v -> c.prepareStatement("insert into pedido_trecho (pedido_id, ordem, viagem_id, preco_unit, volta) values (?,?,?,?,?)").use { it.setInt(1, id); it.setInt(2, i + 1); it.setInt(3, v.id); it.setInt(4, v.preco); it.setInt(5, if (i >= p.viagemIds.size) 1 else 0); it.executeUpdate() } }
                 passageiros.forEachIndexed { i, q ->
                     c.prepareStatement("insert into pedido_passageiro (pedido_id, ordem, nome, categoria, idade, documento_final, acessibilidade) values (?,?,?,?,?,?,?)").use {
                         it.setInt(1, id); it.setInt(2, i + 1); it.setString(3, q.nome); it.setString(4, q.categoria); it.setInt(5, q.idade); it.setString(6, q.documentoFinal); it.setString(7, q.acessibilidade); it.executeUpdate()

@@ -98,14 +98,16 @@ fun TelaCarrinho(e: Estado) {
     val ped = e.pedido
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Link("‹  Voltar à rota") { e.ir(Tela.ROTA) }
-        CabecalhoCompra("Passo 1 de 4", "Seu carrinho", "${e.cidade(r.origem)} → ${e.cidade(r.destino)}")
-        r.viagens.forEach { v ->
+        CabecalhoCompra("Passo 1 de 4", "Seu carrinho", if (e.voltaEscolhida != null) "${e.cidade(r.origem)} ⇄ ${e.cidade(r.destino)}" else "${e.cidade(r.origem)} → ${e.cidade(r.destino)}")
+        val volta = e.voltaEscolhida
+        (r.viagens.map { it to false } + (volta?.viagens.orEmpty().map { it to true })).forEach { (v, naVolta) ->
             Cartao(raio = 24, pad = 20, borda = true) {
+                if (volta != null) Etiqueta(if (naVolta) "Volta" else "Ida", simples = true)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     T(e.trechoTxt(v.origem, v.destino), 18, FontWeight.Bold, ls = -0.3f, mod = Modifier.weight(1f))
                     T(centavosParaReais(v.precoCentavos), 18, FontWeight.Bold)
                 }
-                T("${dataViagem(e.rData, v.saidaMin)} · ${hora(v.saidaMin)} → ${hora(v.chegadaMin)} · ${v.empresa} · ${v.categoria}", 14, cor = c.muted)
+                T("${dataViagem(if (naVolta) (e.rDataVolta ?: e.rData) else e.rData, v.saidaMin)} · ${hora(v.saidaMin)} → ${hora(v.chegadaMin)} · ${v.empresa} · ${v.categoria}", 14, cor = c.muted)
                 T("preço por pessoa", 13, cor = c.muted)
             }
         }
