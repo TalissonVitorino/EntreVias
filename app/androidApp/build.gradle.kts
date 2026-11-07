@@ -52,3 +52,6 @@ android {
         compose = true
     }
 }
+
+// Play no Android Studio = sobe o servidor no Docker antes de instalar o app (não trava se o Docker estiver desligado).
+tasks.matching { it.name == "preDebugBuild" }.configureEach { dependsOn(":server:subirServidor") }
