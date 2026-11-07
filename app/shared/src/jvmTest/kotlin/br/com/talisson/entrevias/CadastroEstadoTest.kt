@@ -35,4 +35,12 @@ class CadastroEstadoTest {
         assertNotNull(e.contaErro); assertTrue("aceite" in e.contaErro!!)
         assertFalse(e.contaOcupada, "validou antes de ir à rede")
     }
+
+    @Test fun marcarOAceiteApagaOErroQueFalavaDele() {
+        val e = estado().apply { cadNome = "Maria"; cadEmail = "maria@email.com"; cadSenha = "senha-forte-1" }
+        e.cadastrar(br.com.talisson.entrevias.domain.CadastroPedido(e.cadNome, e.cadEmail, null, e.cadSenha, e.cadAceita))
+        assertNotNull(e.contaErro)
+        e.marcarAceite(true)
+        assertTrue(e.cadAceita); assertEquals(null, e.contaErro, "o erro do aceite não pode ficar na tela depois de marcado")
+    }
 }

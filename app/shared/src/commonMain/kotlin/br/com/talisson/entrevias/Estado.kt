@@ -140,6 +140,9 @@ class Estado(
     var cadAceita by mutableStateOf(false)   // nunca pré-marcado
     var documento by mutableStateOf(Documento.TERMOS)
 
+    /** Mexer no aceite apaga o erro de tela: ele falava justamente do aceite, e não pode ficar vermelho depois de marcado. */
+    fun marcarAceite(v: Boolean) { cadAceita = v; contaErro = null }
+
     fun limparRascunhoDoCadastro() { cadNome = ""; cadEmail = ""; cadCelular = ""; cadSenha = ""; cadAceita = false }
     fun abrirDocumento(d: Documento) { documento = d; ir(Tela.TERMOS) }
 

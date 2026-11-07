@@ -214,7 +214,7 @@ fun TelaCadastro(e: Estado) {
             CampoTexto("Celular (opcional)", e.cadCelular, { e.cadCelular = it }, dica = "(41) 99999-0000", teclado = KeyboardType.Phone)
             CampoTexto("Senha (mínimo 8 caracteres)", e.cadSenha, { e.cadSenha = it }, senha = true)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Chave(e.cadAceita) { e.cadAceita = it }
+                Chave(e.cadAceita) { e.marcarAceite(it) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     T("Li e aceito:", 14, cor = c.muted)
                     Link("Termos de uso  ›") { e.abrirDocumento(Documento.TERMOS) }

@@ -73,7 +73,7 @@ fun TelaBuscar(e: Estado) {
             Spacer(Modifier.height(16.dp))
             T("Veja preços, horários e conexões em um só planejamento.", 19, cor = c.muted, lh = 26)
             Spacer(Modifier.height(20.dp))
-            T("•  Sem cadastro. Sem compra real.", 14, cor = c.muted)
+            T("•  Cadastro é opcional. Nenhuma compra é real.", 14, cor = c.muted)
         }
 
         Cartao {
