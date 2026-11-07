@@ -14,7 +14,7 @@ Em produção (`ENV=production`) os dois fluxos simulados que movem dinheiro ou 
 |---|---|
 | Onde está | `server/.../Compras.kt`: objeto `Psp` e as funções `pagarComPix`, `pagarComCartao`, `simularPixPago` |
 | Cartão | aprovado, **exceto o terminado em `0002`**, que é recusado (para testar a recusa). Máximo de 5 tentativas por pedido |
-| Pix | gera um código que começa com `EVSIM` (não é um Pix de verdade) e expira em 10 min. Quem "paga" é o botão **Simular pagamento do Pix (demonstração)**, que o servidor só aceita fora de produção |
+| Pix | gera um código que começa com `EVSIM` (não é um Pix de verdade) e expira em 10 min. A tela mostra o QR desse código (gerador próprio em `core/.../domain/Qr.kt`, conferido contra o `qrcode` do Python e lido pelo OpenCV), mas nenhum banco o reconhece. Quem "paga" é o botão **Simular pagamento do Pix (demonstração)**, que o servidor só aceita fora de produção |
 | Número do cartão e CVV | **nunca saem do aparelho**: o app confere (Luhn, validade) e manda só bandeira, 4 últimos dígitos e parcelas. Numa integração real isso vira o token do processador |
 | Ponto exato de troca | trocar o corpo de `pagarComPix`/`pagarComCartao` por chamadas ao processador e fazer o aviso do banco (webhook) chamar `aprovar(...)`, no lugar do botão de demonstração. Preço, reserva de poltrona, bilhetes e notificações já são de verdade |
 | Em produção com `Psp.simulado = true` | criar pedido e pagar dão 503; o botão de demonstração não existe (404) |
@@ -70,7 +70,6 @@ O suporte de verdade é de uma empresa terceira. Troca por produção: integrar 
 
 ## O que o design pede e **não** foi feito
 
-- **QR code do Pix:** a tela mostra o código "copia e cola"; não há imagem de QR.
 - **Comprovante em PDF** e envio do comprovante por e-mail ou WhatsApp.
 - **Remarcação** de viagem (aparece no design do carrinho); só existe o cancelamento.
 - **Conexão entre terminais diferentes** (ex.: a baldeação que exige táxi entre terminais): a base fictícia tem um terminal por cidade,

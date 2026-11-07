@@ -340,6 +340,8 @@ fun TelaPix(e: Estado) {
             e.pagamentoModo?.let { if (it["simulado"] == true) Aviso("Pix simulado", listOf("Este código não é um Pix de verdade: nenhum banco o reconhece.", "Use o botão de demonstração abaixo para aprovar.")) }
             Cartao {
                 Contagem("Expira em", g.expiraEm, g.agora) { e.abrirPoltronas() }
+                g.codigoPix?.let { cod -> Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { QrView(cod) } }
+                T("Escaneie o QR code no app do seu banco ou use o Pix copia e cola.", 14, cor = c.muted)
                 T("Pix copia e cola", 14, FontWeight.Medium, c.muted)
                 Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(c.field).padding(14.dp)) { T(g.codigoPix.orEmpty(), 14, FontWeight.Medium, mod = Modifier.fillMaxWidth()) }
                 Botao(if (copiado) "✓ Código copiado" else "Copiar código Pix", { clip.setText(AnnotatedString(g.codigoPix.orEmpty())); copiado = true }, Modifier.fillMaxWidth(), ativo = true)
