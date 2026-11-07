@@ -58,7 +58,7 @@ object Banco {
     }
 
     /** Leva um banco criado antes da Sprint 1 ao esquema atual. Idempotente: num banco novo não faz nada. */
-    private fun migrar(c: Connection) {
+    internal fun migrar(c: Connection) {
         fun colunas(t: String) = c.createStatement().use { s -> s.executeQuery("pragma table_info($t)").use { rs -> buildSet { while (rs.next()) add(rs.getString("name")) } } }
         fun acrescentar(t: String, coluna: String, ddl: String) {
             if (coluna !in colunas(t)) c.createStatement().use { it.execute("alter table $t add column $coluna $ddl") }
