@@ -21,6 +21,8 @@ import br.com.talisson.entrevias.domain.PlanoBConexao
 import br.com.talisson.entrevias.domain.RiscoConexao
 import br.com.talisson.entrevias.domain.RiscoRota
 import br.com.talisson.entrevias.domain.Rota
+import br.com.talisson.entrevias.domain.RoteiroSalvo
+import br.com.talisson.entrevias.domain.RoteirosSalvos
 import br.com.talisson.entrevias.domain.Salvamento
 import br.com.talisson.entrevias.domain.Terminal
 import br.com.talisson.entrevias.domain.Usuario
@@ -43,12 +45,13 @@ data class Plano(val rota: Rota, val data: Data, val pax: Int)
 const val COTACAO = "Cotação demonstrativa de 01/10/2026 às 10:00"
 const val VENDEDOR = "Vendedor fictício: Bilheteria de demonstração"
 const val SEPARADAS = "Passagens separadas: atrasos podem causar a perda da conexão. Não há proteção de conexão confirmada."
+private const val CHAVE_ROTEIROS = "roteiros"
 const val TAXAS = "Taxas de compra não consultadas. O valor final pode variar fora da demonstração."
 
 class Estado(
     private val api: Api,
     private val escopo: CoroutineScope,
-    armazenamento: ArmazenamentoLocal = ArmazenamentoEmMemoria(),
+    private val armazenamento: ArmazenamentoLocal = ArmazenamentoEmMemoria(),
 ) {
     private val sessaoSalva = SessaoSalva(armazenamento)
     var carga by mutableStateOf<Carga>(Carga.Carregando)
@@ -81,7 +84,21 @@ class Estado(
     var limiteAtingido by mutableStateOf(false)
     var concluidos by mutableStateOf(0)
     val selecionadas = mutableStateListOf<String>()
-    val planos = mutableStateListOf<Plano>()
+    /** Roteiros salvos (RF07, US22): carregados do aparelho ao abrir e regravados a cada mudança. */
+    val planos = mutableStateListOf<Plano>().apply { addAll(lerRoteiros()) }
+
+    private fun lerRoteiros(): List<Plano> =
+        RoteirosSalvos.decodificar(runCatching { armazenamento.ler(CHAVE_ROTEIROS) }.getOrNull()).map {
+            Plano(Rota(it.viagens, it.params), Data(it.ano, it.mes, it.dia), it.pax)
+        }
+
+    private fun guardarRoteiros() {
+        val salvos = planos.map { RoteiroSalvo(it.rota.viagens, it.rota.params, it.data.ano, it.data.mes, it.data.dia, it.pax) }
+        runCatching { armazenamento.gravar(CHAVE_ROTEIROS, RoteirosSalvos.codificar(salvos)) }
+    }
+
+    /** US22: tira o roteiro da lista e do aparelho. Não mexe em mais nada. */
+    fun removerPlano(p: Plano) { if (planos.remove(p)) guardarRoteiros() }
 
     // ---------- conta (US8, US9, US11) e empresas parceiras (US7) ----------
     // A sessão fica só na memória: ao fechar o app é preciso entrar de novo (armazenamento seguro do token = próxima etapa).
@@ -285,7 +302,7 @@ class Estado(
     /** RF34: guarda no aparelho até o limite; ao chegar nele não apaga nada, só avisa (`limiteAtingido`). */
     fun salvar(r: Rota) {
         when (val s = LimiteRoteiros.salvar(planos.toList(), Plano(r, rData, rPax))) {
-            is Salvamento.Salvo -> { planos.clear(); planos.addAll(s.lista); salvoAgora = true }
+            is Salvamento.Salvo -> { planos.clear(); planos.addAll(s.lista); guardarRoteiros(); salvoAgora = true }
             Salvamento.Repetido -> salvoAgora = true
             Salvamento.Cheio -> limiteAtingido = true
         }

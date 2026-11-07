@@ -559,6 +559,7 @@ fun TelaComparar(e: Estado) {
 @Composable
 fun TelaPlanejamentos(e: Estado) {
     val c = cores()
+    var confirmando by remember { mutableStateOf<Plano?>(null) }
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Column {
             Eyebrow("Meus planejamentos")
@@ -574,13 +575,19 @@ fun TelaPlanejamentos(e: Estado) {
                 T("${e.cidade(r.origem)} → ${e.cidade(r.destino)}", 22, FontWeight.Bold, ls = -0.4f)
                 T("${p.data.br()} · ${hora(r.saidaMin)} → ${hora(r.chegadaMin)} · ${duracao(r.duracaoMin)} · ${r.stops()}", 15, cor = c.muted)
                 T(centavosParaReais(r.totalCentavos * p.pax) + " · " + passageirosTxt(p.pax), 18, FontWeight.Bold)
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (confirmando == p) {
+                    T("Remover este planejamento? Ele sai da lista e deste aparelho.", 14, FontWeight.SemiBold, c.erro)
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Botao("Remover", { e.removerPlano(p); confirmando = null }, pequeno = true, primario = true)
+                        Botao("Cancelar", { confirmando = null }, pequeno = true)
+                    }
+                } else Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Botao("Abrir", { e.abrirPlano(p) }, pequeno = true, primario = true)
                     Botao("Simular", { e.rData = p.data; e.rPax = p.pax; e.simular(r) }, pequeno = true)
-                    Botao("Remover", { e.planos.remove(p) }, pequeno = true)
+                    Botao("Remover", { confirmando = p }, pequeno = true)
                 }
             }
         }
-        T("Os planejamentos ficam só na memória por enquanto. O armazenamento permanente chega com a conta de usuário (história H9).", 13, cor = c.muted)
+        T("Ficam guardados só neste aparelho (até 10). Se você trocar de aparelho ou limpar os dados do app ou do navegador, eles se perdem.", 13, cor = c.muted)
     }
 }
