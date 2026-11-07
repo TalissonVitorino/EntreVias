@@ -55,3 +55,13 @@ Learn more about [Kotlin Multiplatform](https://www.jetbrains.com/help/kotlin-mu
 We would appreciate your feedback on Compose/Web and Kotlin/Wasm in the public Slack
 channel [#compose-web](https://slack-chats.kotlinlang.org/c/compose-web).
 If you face any issues, please report them on [YouTrack](https://youtrack.jetbrains.com/newIssue?project=CMP).
+### Servidor: variáveis de ambiente
+
+| Variável | Para quê |
+|---|---|
+| `GESTOR_EMAIL` e `GESTOR_SENHA` | criam (ou promovem) o gestor; sem as duas, ninguém vira gestor |
+| `CONFIAR_NO_PROXY=true` | atrás de proxy (Render), usa o último IP do `X-Forwarded-For` nos limites de taxa |
+| `ENV=production` | desliga os fluxos que dependem de e-mail enquanto o envio for simulado |
+| `CAIXA_DE_SAIDA_DEV=true` | só em desenvolvimento: abre `/api/dev/caixa-de-saida` com os e-mails simulados |
+
+O que é simulado, e como trocar por produção: [docs/SIMULADOS.md](docs/SIMULADOS.md).

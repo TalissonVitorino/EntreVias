@@ -51,8 +51,29 @@ object Banco {
                         .forEach { t -> c.createStatement().use { s -> s.execute("delete from $t") } }
                 }
             }
+            migrar(c)
             val vazio = c.createStatement().use { s -> s.executeQuery("select count(*) from viagem").use { it.next(); it.getInt(1) == 0 } }
             if (vazio) semear(c)
+        }
+    }
+
+    /** Leva um banco criado antes da Sprint 1 ao esquema atual. Idempotente: num banco novo não faz nada. */
+    internal fun migrar(c: Connection) {
+        fun colunas(t: String) = c.createStatement().use { s -> s.executeQuery("pragma table_info($t)").use { rs -> buildSet { while (rs.next()) add(rs.getString("name")) } } }
+        fun acrescentar(t: String, coluna: String, ddl: String) {
+            if (coluna !in colunas(t)) c.createStatement().use { it.execute("alter table $t add column $coluna $ddl") }
+        }
+        acrescentar("usuario", "celular", "TEXT")
+        acrescentar("usuario", "papel", "TEXT NOT NULL DEFAULT 'viajante' CHECK (papel IN ('viajante','gestor'))")
+        acrescentar("usuario", "aceitou_termos_em", "INTEGER")
+        acrescentar("usuario", "email_verificado_em", "INTEGER")
+        acrescentar("empresa", "sigla", "TEXT")
+        acrescentar("empresa", "cnpj", "TEXT")
+        c.createStatement().use {
+            it.execute("create unique index if not exists empresa_cnpj on empresa(cnpj) where cnpj is not null")
+            it.execute("create table if not exists sessao (token_hash TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, criada_em INTEGER NOT NULL, expira_em INTEGER NOT NULL)")
+            it.execute("create table if not exists codigo_verificacao (usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, finalidade TEXT NOT NULL CHECK (finalidade IN ('email','senha')), codigo_hash TEXT NOT NULL, expira_em INTEGER NOT NULL, tentativas INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (usuario_id, finalidade))")
+            it.execute("create table if not exists tentativa_login (chave TEXT PRIMARY KEY, falhas INTEGER NOT NULL DEFAULT 0, bloqueado_ate INTEGER)")
         }
     }
 
@@ -135,7 +156,7 @@ object Banco {
                 """select v.id, e.nome, l.categoria, o.codigo, d.codigo, v.saida_em, v.chegada_em, v.preco_centavos, v.preco_atualizado_em
                    from viagem v join linha l on l.id = v.linha_id join empresa e on e.id = l.empresa_id
                    join terminal o on o.id = l.origem_terminal_id join terminal d on d.id = l.destino_terminal_id
-                   where v.saida_em >= ? and v.saida_em < ? order by v.saida_em"""
+                   where e.ativa = 1 and v.saida_em >= ? and v.saida_em < ? order by v.saida_em"""
             ).use { st ->
                 st.setLong(1, inicio); st.setLong(2, inicio + dias * 86400L)
                 st.executeQuery().use { rs ->

@@ -13,6 +13,8 @@ import java.time.LocalDate
 
 fun main() {
     Banco.iniciar()
+    // Gestor (US7): só existe se as duas variáveis forem definidas; não há senha padrão.
+    Contas.garantirGestor(System.getenv("GESTOR_EMAIL"), System.getenv("GESTOR_SENHA"))
     embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
         .start(wait = true)
 }
@@ -22,11 +24,14 @@ fun Application.module() {
     install(CORS) {
         anyHost()
         allowHeader(HttpHeaders.ContentType)
+        allowHeader(HttpHeaders.Authorization)
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
+        allowMethod(HttpMethod.Put)
         allowMethod(HttpMethod.Delete)
     }
     routing {
+        rotasDeConta()
         get("/") { call.respondText(sayHello("Ktor")) }
         get("/api/saude") { call.respondText("ok") }
         get("/api/cidades") { call.respond(Banco.terminais()) }

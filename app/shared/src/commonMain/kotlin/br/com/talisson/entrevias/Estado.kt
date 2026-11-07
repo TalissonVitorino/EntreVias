@@ -5,25 +5,36 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import br.com.talisson.entrevias.domain.AtrasoFicticio
+import br.com.talisson.entrevias.domain.CadastroPedido
+import br.com.talisson.entrevias.domain.Empresa
+import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.EmpresaPedido
+import br.com.talisson.entrevias.domain.LoginPedido
 import br.com.talisson.entrevias.domain.LimiteRoteiros
 import br.com.talisson.entrevias.domain.MotorDeRotas
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.ParametrosConexao
 import br.com.talisson.entrevias.domain.ParametrosPlanoB
 import br.com.talisson.entrevias.domain.ParametrosRisco
+import br.com.talisson.entrevias.domain.PerfilPedido
 import br.com.talisson.entrevias.domain.PlanoB
+import br.com.talisson.entrevias.domain.RedefinirSenhaPedido
 import br.com.talisson.entrevias.domain.PlanoBConexao
 import br.com.talisson.entrevias.domain.RiscoConexao
 import br.com.talisson.entrevias.domain.RiscoRota
 import br.com.talisson.entrevias.domain.Rota
+import br.com.talisson.entrevias.domain.RoteiroSalvo
+import br.com.talisson.entrevias.domain.RoteirosSalvos
 import br.com.talisson.entrevias.domain.Salvamento
 import br.com.talisson.entrevias.domain.Terminal
+import br.com.talisson.entrevias.domain.Usuario
+import br.com.talisson.entrevias.domain.Validacao
 import br.com.talisson.entrevias.domain.Viagem
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS }
+enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -36,9 +47,15 @@ data class Plano(val rota: Rota, val data: Data, val pax: Int)
 const val COTACAO = "Cotação demonstrativa de 01/10/2026 às 10:00"
 const val VENDEDOR = "Vendedor fictício: Bilheteria de demonstração"
 const val SEPARADAS = "Passagens separadas: atrasos podem causar a perda da conexão. Não há proteção de conexão confirmada."
+private const val CHAVE_ROTEIROS = "roteiros"
 const val TAXAS = "Taxas de compra não consultadas. O valor final pode variar fora da demonstração."
 
-class Estado(private val api: Api, private val escopo: CoroutineScope) {
+class Estado(
+    private val api: Api,
+    private val escopo: CoroutineScope,
+    private val armazenamento: ArmazenamentoLocal = ArmazenamentoEmMemoria(),
+) {
+    private val sessaoSalva = SessaoSalva(armazenamento)
     var carga by mutableStateOf<Carga>(Carga.Carregando)
     var terminais by mutableStateOf<List<Terminal>>(emptyList())
     var params by mutableStateOf(ParametrosConexao())
@@ -69,7 +86,214 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
     var limiteAtingido by mutableStateOf(false)
     var concluidos by mutableStateOf(0)
     val selecionadas = mutableStateListOf<String>()
-    val planos = mutableStateListOf<Plano>()
+    /** Roteiros salvos (RF07, US22): carregados do aparelho ao abrir e regravados a cada mudança. */
+    val planos = mutableStateListOf<Plano>().apply { addAll(lerRoteiros()) }
+
+    private fun lerRoteiros(): List<Plano> =
+        RoteirosSalvos.decodificar(runCatching { armazenamento.ler(CHAVE_ROTEIROS) }.getOrNull()).map {
+            Plano(Rota(it.viagens, it.params), Data(it.ano, it.mes, it.dia), it.pax)
+        }
+
+    private fun guardarRoteiros() {
+        val salvos = planos.map { RoteiroSalvo(it.rota.viagens, it.rota.params, it.data.ano, it.data.mes, it.data.dia, it.pax) }
+        runCatching { armazenamento.gravar(CHAVE_ROTEIROS, RoteirosSalvos.codificar(salvos)) }
+    }
+
+    /** US22: tira o roteiro da lista e do aparelho. Não mexe em mais nada. */
+    fun removerPlano(p: Plano) { if (planos.remove(p)) guardarRoteiros() }
+
+    // ---------- conta (US8, US9, US11) e empresas parceiras (US7) ----------
+    // O token fica em memória e também no armazenamento seguro do aparelho (SessaoSalva), conferido ao abrir o app.
+    private var token: String? = null
+    var usuario by mutableStateOf<Usuario?>(null)
+    var contaOcupada by mutableStateOf(false)
+    var contaErro by mutableStateOf<String?>(null)
+    var contaAviso by mutableStateOf<String?>(null)
+    val empresas = mutableStateListOf<Empresa>()
+    var empresasCarga by mutableStateOf<Carga>(Carga.Pronto)
+
+    /** Vira `true` quando a verificação do token guardado terminou (deu certo, foi recusado ou o servidor não respondeu). */
+    var sessaoVerificada by mutableStateOf(false)
+
+    /**
+     * Ao abrir o app: se há token guardado, o servidor diz se ainda vale. Recusado (401) = apaga do aparelho.
+     * Servidor fora do ar = mantém guardado e segue como visitante, sem apagar a sessão por causa de uma queda de rede.
+     */
+    private suspend fun restaurarSessao() {
+        try {
+            if (token != null) return
+            val t = sessaoSalva.token() ?: return
+            when (val r = api.perfil(t)) {
+                is Resp.Ok -> { token = t; usuario = r.valor }
+                is Resp.Falha -> if (r.status == 401) sessaoSalva.apagar()
+            }
+        } finally { sessaoVerificada = true }
+    }
+
+    fun limparMensagensDeConta() { contaErro = null; contaAviso = null }
+
+    // Rascunho do cadastro: fica aqui (não na tela) para não se perder quando a pessoa sai para ler os Termos.
+    var cadNome by mutableStateOf("")
+    var cadEmail by mutableStateOf("")
+    var cadCelular by mutableStateOf("")
+    var cadSenha by mutableStateOf("")
+    var cadAceita by mutableStateOf(false)   // nunca pré-marcado
+    var documento by mutableStateOf(Documento.TERMOS)
+
+    fun limparRascunhoDoCadastro() { cadNome = ""; cadEmail = ""; cadCelular = ""; cadSenha = ""; cadAceita = false }
+    fun abrirDocumento(d: Documento) { documento = d; ir(Tela.TERMOS) }
+
+    private fun abrirSessao(u: Usuario, t: String) { token = t; sessaoSalva.guardar(t); usuario = u; limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA) }
+
+    fun cadastrar(p: CadastroPedido) {
+        Validacao.cadastro(p)?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.cadastrar(p)) {
+                is Resp.Ok -> abrirSessao(r.valor.usuario, r.valor.token)
+                is Resp.Falha -> contaErro = r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun entrar(email: String, senha: String) {
+        if (Validacao.email(email) != null || senha.isEmpty()) { contaErro = "Informe e-mail e senha."; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.entrar(LoginPedido(email, senha))) {
+                is Resp.Ok -> abrirSessao(r.valor.usuario, r.valor.token)
+                is Resp.Falha -> contaErro =
+                    if (r.status == 429) "Muitas tentativas. Tente de novo em ${minutosTxt(r.esperaSeg)}." else r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun sair() {
+        val t = token
+        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
+        if (t != null) escopo.launch { api.sair(t) }
+    }
+
+    fun salvarPerfil(p: PerfilPedido) {
+        val t = token ?: return
+        Validacao.perfil(p)?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.salvarPerfil(t, p)) {
+                is Resp.Ok -> { usuario = r.valor; contaAviso = "Dados salvos." }
+                is Resp.Falha -> { contaErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            contaOcupada = false
+        }
+    }
+
+    // ---------- e-mail: recuperar senha (RQ9) e confirmar e-mail (RQ10) ----------
+
+    /** Como o servidor envia e-mail. `null` até a primeira resposta. Simulado = nenhum e-mail real sai (docs/SIMULADOS.md). */
+    var emailEstado by mutableStateOf<EstadoEmail?>(null)
+    var recEmail by mutableStateOf("")
+
+    fun carregarEstadoEmail() {
+        escopo.launch { (api.estadoEmail() as? Resp.Ok)?.let { emailEstado = it.valor } }
+    }
+
+    fun abrirRecuperacao() { limparMensagensDeConta(); recEmail = cadEmail.ifBlank { recEmail }; ir(Tela.ESQUECI_SENHA) }
+
+    fun pedirCodigoDeSenha(email: String) {
+        Validacao.email(email)?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.esqueciSenha(email)) {
+                is Resp.Ok -> { recEmail = email; ir(Tela.REDEFINIR_SENHA); contaAviso = r.valor.mensagem }
+                is Resp.Falha -> contaErro = if (r.status == 429) "Muitas tentativas. Tente de novo em ${minutosTxt(r.esperaSeg)}." else r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun redefinirSenha(codigo: String, novaSenha: String) {
+        val p = RedefinirSenhaPedido(recEmail, codigo.trim(), novaSenha)
+        (Validacao.codigo(p.codigo) ?: Validacao.senha(novaSenha))?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.redefinirSenha(p)) {
+                is Resp.Ok -> { recEmail = ""; ir(Tela.ENTRAR); contaAviso = r.valor.mensagem }
+                is Resp.Falha -> contaErro = if (r.status == 429) "Muitas tentativas. Tente de novo em ${minutosTxt(r.esperaSeg)}." else r.mensagem
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun abrirVerificacao() { limparMensagensDeConta(); ir(Tela.VERIFICAR_EMAIL) }
+
+    fun reenviarVerificacao() {
+        val t = token ?: return
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.enviarVerificacao(t)) {
+                is Resp.Ok -> contaAviso = r.valor.mensagem
+                is Resp.Falha -> { contaErro = if (r.status == 429) "Muitas tentativas. Tente de novo mais tarde." else r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            contaOcupada = false
+        }
+    }
+
+    fun confirmarEmail(codigo: String) {
+        val t = token ?: return
+        Validacao.codigo(codigo.trim())?.let { contaErro = it; return }
+        if (contaOcupada) return
+        escopo.launch {
+            contaOcupada = true; limparMensagensDeConta()
+            when (val r = api.confirmarEmail(t, codigo.trim())) {
+                is Resp.Ok -> { usuario = r.valor; ir(Tela.CONTA); contaAviso = "E-mail confirmado." }
+                is Resp.Falha -> { contaErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            contaOcupada = false
+        }
+    }
+
+    private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
+
+    fun carregarEmpresas() {
+        val t = token ?: return
+        escopo.launch {
+            empresasCarga = Carga.Carregando
+            when (val r = api.empresas(t)) {
+                is Resp.Ok -> { empresas.clear(); empresas.addAll(r.valor); empresasCarga = Carga.Pronto }
+                is Resp.Falha -> { empresasCarga = Carga.Erro(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    /** Cria (id == null) ou edita uma empresa parceira; devolve o texto de erro pelo [aoTerminar] (`null` = deu certo). */
+    fun salvarEmpresa(id: Int?, p: EmpresaPedido, aoTerminar: (String?) -> Unit) {
+        val t = token ?: return
+        Validacao.empresa(p)?.let { aoTerminar(it); return }
+        escopo.launch {
+            val r = if (id == null) api.criarEmpresa(t, p) else api.atualizarEmpresa(t, id, p)
+            when (r) {
+                is Resp.Ok -> {
+                    val i = empresas.indexOfFirst { it.id == r.valor.id }
+                    if (i >= 0) empresas[i] = r.valor else { empresas.add(r.valor); empresas.sortBy { it.nome } }
+                    aoTerminar(null)
+                }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    private fun minutosTxt(seg: Int?): String {
+        val m = ((seg ?: 900) + 59) / 60
+        return if (m <= 1) "1 minuto" else "$m minutos"
+    }
 
     // plano B (RF20): as regras do servidor e as viagens do dia da rota aberta
     var paramsPlanoB by mutableStateOf(ParametrosPlanoB())
@@ -91,6 +315,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
             } catch (t: Throwable) {
                 Carga.Erro("Não foi possível falar com o servidor (${urlBase()}).")
             }
+            if (carga is Carga.Pronto) restaurarSessao()
         }
     }
 
@@ -158,7 +383,7 @@ class Estado(private val api: Api, private val escopo: CoroutineScope) {
     /** RF34: guarda no aparelho até o limite; ao chegar nele não apaga nada, só avisa (`limiteAtingido`). */
     fun salvar(r: Rota) {
         when (val s = LimiteRoteiros.salvar(planos.toList(), Plano(r, rData, rPax))) {
-            is Salvamento.Salvo -> { planos.clear(); planos.addAll(s.lista); salvoAgora = true }
+            is Salvamento.Salvo -> { planos.clear(); planos.addAll(s.lista); guardarRoteiros(); salvoAgora = true }
             Salvamento.Repetido -> salvoAgora = true
             Salvamento.Cheio -> limiteAtingido = true
         }

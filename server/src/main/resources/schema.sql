@@ -19,8 +19,11 @@ CREATE TABLE empresa (
   id        INTEGER PRIMARY KEY,
   nome      TEXT NOT NULL UNIQUE,
   ativa     INTEGER NOT NULL DEFAULT 1 CHECK (ativa IN (0,1)),
-  ficticia  INTEGER NOT NULL DEFAULT 1 CHECK (ficticia IN (0,1))
+  ficticia  INTEGER NOT NULL DEFAULT 1 CHECK (ficticia IN (0,1)),
+  sigla     TEXT,                          -- US7
+  cnpj      TEXT                           -- US7: só dígitos
 );
+CREATE UNIQUE INDEX empresa_cnpj ON empresa(cnpj) WHERE cnpj IS NOT NULL;
 
 CREATE TABLE linha (
   id                  INTEGER PRIMARY KEY,
@@ -64,7 +67,33 @@ CREATE TABLE usuario (
   aceita_notificacoes INTEGER NOT NULL DEFAULT 0 CHECK (aceita_notificacoes IN (0,1)),   -- RNF06: consentimentos
   aceita_marketing    INTEGER NOT NULL DEFAULT 0 CHECK (aceita_marketing IN (0,1)),      -- separados
   criado_em           INTEGER NOT NULL,
-  excluido_em         INTEGER
+  excluido_em         INTEGER,
+  celular             TEXT,                    -- US8/US9
+  papel               TEXT NOT NULL DEFAULT 'viajante' CHECK (papel IN ('viajante','gestor')),
+  aceitou_termos_em   INTEGER,                 -- RQ11
+  email_verificado_em INTEGER                  -- RQ10
+);
+
+CREATE TABLE codigo_verificacao (              -- RQ9/RQ10: um código ativo por pessoa e finalidade; só o hash fica
+  usuario_id   INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  finalidade   TEXT NOT NULL CHECK (finalidade IN ('email','senha')),
+  codigo_hash  TEXT NOT NULL,
+  expira_em    INTEGER NOT NULL,
+  tentativas   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (usuario_id, finalidade)
+);
+
+CREATE TABLE tentativa_login (                 -- RQ12: por hash do e-mail, valendo também para e-mail que não existe
+  chave          TEXT PRIMARY KEY,
+  falhas         INTEGER NOT NULL DEFAULT 0,
+  bloqueado_ate  INTEGER
+);
+
+CREATE TABLE sessao (                          -- guardamos só o hash do token, nunca o token
+  token_hash  TEXT PRIMARY KEY,
+  usuario_id  INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE,
+  criada_em   INTEGER NOT NULL,
+  expira_em   INTEGER NOT NULL
 );
 
 CREATE TABLE assinatura (                      -- R3 (RF12)
