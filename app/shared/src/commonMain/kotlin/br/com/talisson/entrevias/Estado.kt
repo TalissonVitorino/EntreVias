@@ -17,6 +17,8 @@ import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.NovaAvaliacao
 import br.com.talisson.entrevias.domain.Chamado
 import br.com.talisson.entrevias.domain.Avaliacao
+import br.com.talisson.entrevias.domain.OcorrenciaPedido
+import br.com.talisson.entrevias.domain.ViagemDoGestor
 import br.com.talisson.entrevias.domain.EtapaDoTrecho
 import br.com.talisson.entrevias.domain.ViagemAtiva
 import br.com.talisson.entrevias.domain.StatusPedido
@@ -64,7 +66,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS,
-    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR }
+    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR, GESTAO }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -228,7 +230,7 @@ class Estado(
 
     fun sair() {
         val t = token
-        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
+        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); gestorViagens.clear(); gestorChamados.clear(); gestorReclamacoes.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
         if (t != null) escopo.launch { api.sair(t) }
     }
 
@@ -605,6 +607,58 @@ class Estado(
     fun abrirAjuda(p: Pedido? = null) {
         ajudaPedido = p; ajudaTrecho = null; chamadoNovo = null; ajudaErro = null; ir(Tela.AJUDA); carregarChamados()
         if (historico.isEmpty()) carregarHistorico(null)
+    }
+
+    // ---------- gestão (D4, F1, F2): só para o papel de gestor ----------
+    val gestorViagens = mutableStateListOf<ViagemDoGestor>()
+    val gestorChamados = mutableStateListOf<Chamado>()
+    val gestorReclamacoes = mutableStateListOf<Avaliacao>()
+    var gestorData by mutableStateOf(DATA_INICIAL)
+    var gestorCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var gestorAviso by mutableStateOf<String?>(null)
+
+    fun carregarGestao() {
+        val t = token ?: return
+        if (usuario?.ehGestor != true) return
+        val dia = gestorData
+        escopo.launch {
+            gestorCarga = Carga.Carregando
+            val v = api.gestorViagens(t, dia); val c = api.gestorChamados(t); val r = api.gestorReclamacoes(t)
+            val falha = listOf(v, c, r).filterIsInstance<Resp.Falha>().firstOrNull()
+            if (falha != null) { gestorCarga = Carga.Erro(falha.mensagem); if (falha.status == 401) sessaoExpirou(); return@launch }
+            if (v is Resp.Ok) { gestorViagens.clear(); gestorViagens.addAll(v.valor) }
+            if (c is Resp.Ok) { gestorChamados.clear(); gestorChamados.addAll(c.valor) }
+            if (r is Resp.Ok) { gestorReclamacoes.clear(); gestorReclamacoes.addAll(r.valor) }
+            gestorCarga = Carga.Pronto
+        }
+    }
+
+    fun mudarDiaDaGestao(delta: Int) { gestorData = gestorData.plusDias(delta); gestorAviso = null; carregarGestao() }
+
+    /** Registra atraso, mudança de horário ou cancelamento; [aoTerminar] recebe o erro (`null` = deu certo). */
+    fun registrarOcorrencia(viagemId: Int, tipo: String, minutos: Int, aoTerminar: (String?) -> Unit) {
+        val t = token ?: return
+        escopo.launch {
+            when (val r = api.registrarOcorrencia(t, viagemId, OcorrenciaPedido(tipo, minutos))) {
+                is Resp.Ok -> {
+                    val n = r.valor.pedidosAfetados
+                    gestorAviso = if (n == 0) "Registrado. Ninguém tinha compra paga nesta viagem." else "Registrado. $n ${if (n == 1) "compra avisada" else "compras avisadas"}."
+                    aoTerminar(null); carregarGestao()
+                }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun responderChamado(id: Int, texto: String, aoTerminar: (String?) -> Unit) {
+        val t = token ?: return
+        if (texto.trim().length !in 2..1000) { aoTerminar("A resposta precisa ter de 2 a 1000 caracteres."); return }
+        escopo.launch {
+            when (val r = api.responderChamado(t, id, texto.trim())) {
+                is Resp.Ok -> { val i = gestorChamados.indexOfFirst { it.id == id }; if (i >= 0) gestorChamados[i] = r.valor; aoTerminar(null) }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
     }
 
     fun carregarChamados() {

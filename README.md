@@ -66,12 +66,13 @@ If you face any issues, please report them on [YouTrack](https://youtrack.jetbra
 
 O que é simulado, e como trocar por produção: [docs/SIMULADOS.md](docs/SIMULADOS.md).
 
-### Ferramentas do gestor (só pela API, ainda sem tela)
+### Ferramentas do gestor (no app: Conta → Viagens, ajuda e reclamações; também pela API)
 
-Entre como gestor (`POST /api/login`) e use o token em `Authorization: Bearer <token>`:
+No app, o gestor vê as viagens de um dia, registra atraso, horário ou cancelamento, responde pedidos de ajuda e lê reclamações. Pela API: entre como gestor (`POST /api/login`) e use o token em `Authorization: Bearer <token>`:
 
 | Para quê | Chamada |
 |---|---|
+| Listar as viagens de um dia, com ocorrência e compras pagas | `GET /api/gestor/viagens?data=AAAA-MM-DD` |
 | Registrar atraso, horário alterado ou cancelamento de uma viagem | `POST /api/gestor/viagens/{id}/ocorrencia` com `{"tipo":"atraso","minutos":25}` (`atraso`, `horario` ou `cancelada`) |
 | Ver os pedidos de ajuda | `GET /api/gestor/chamados` |
 | Responder um pedido de ajuda | `POST /api/gestor/chamados/{id}/resposta` com `{"texto":"..."}` |

@@ -85,6 +85,7 @@ fun App() {
                         Tela.CADASTRO -> TelaCadastro(e)
                         Tela.TERMOS -> TelaTermos(e)
                         Tela.EMPRESAS -> TelaEmpresas(e)
+                        Tela.GESTAO -> TelaGestao(e)
                         Tela.ESQUECI_SENHA -> TelaEsqueciSenha(e)
                         Tela.REDEFINIR_SENHA -> TelaRedefinirSenha(e)
                         Tela.VERIFICAR_EMAIL -> TelaVerificarEmail(e)
@@ -125,7 +126,7 @@ fun App() {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
                 Row(Modifier.fillMaxWidth()) {
-                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL, Tela.PAGAMENTOS, Tela.PASSAGEIROS)
+                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.GESTAO, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL, Tela.PAGAMENTOS, Tela.PASSAGEIROS)
                     val nosSalvos = e.tela == Tela.PLANEJAMENTOS
                     val nasViagens = e.tela in setOf(Tela.HISTORICO, Tela.COMPRA_DETALHE, Tela.CANCELAR, Tela.BILHETES, Tela.AVISOS, Tela.EM_ANDAMENTO, Tela.AJUDA, Tela.AVALIAR)
                     val naBusca = !naConta && !nosSalvos && !nasViagens

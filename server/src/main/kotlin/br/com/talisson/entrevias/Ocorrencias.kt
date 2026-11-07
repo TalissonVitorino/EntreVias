@@ -22,6 +22,20 @@ object Ocorrencias {
     private fun nomeDoTrecho(p: Pedido, viagemId: Int, cidade: (String) -> String): String =
         p.trechos.first { it.viagemId == viagemId }.let { "${cidade(it.origem)} → ${cidade(it.destino)}" }
 
+    /** Gestor: as viagens de um dia, cada uma com a ocorrência já registrada e o número de compras pagas. */
+    fun painel(data: java.time.LocalDate): List<br.com.talisson.entrevias.domain.ViagemDoGestor> {
+        val viagens = Banco.viagens(data, 1)
+        if (viagens.isEmpty()) return emptyList()
+        return Banco.conexao().use { c ->
+            val estado = c.createStatement().use { s -> s.executeQuery("select viagem_id, atraso_min, cancelada from viagem_estado").use { rs -> buildMap { while (rs.next()) put(rs.getInt(1), rs.getInt(2) to (rs.getInt(3) == 1)) } } }
+            val compras = c.createStatement().use { s ->
+                s.executeQuery("select pt.viagem_id, count(distinct p.id) from pedido_trecho pt join pedido p on p.id = pt.pedido_id where p.status = 'pago' group by pt.viagem_id")
+                    .use { rs -> buildMap { while (rs.next()) put(rs.getInt(1), rs.getInt(2)) } }
+            }
+            viagens.map { v -> br.com.talisson.entrevias.domain.ViagemDoGestor(v, estado[v.id]?.first ?: 0, estado[v.id]?.second ?: false, compras[v.id] ?: 0) }
+        }
+    }
+
     fun registrar(viagemId: Int, tipo: String, minutos: Int): OcorrenciaResultado {
         if (tipo !in TipoOcorrencia.TODOS) throw ErroDeCompra(400, "Tipo de ocorrência inválido.")
         when (tipo) {

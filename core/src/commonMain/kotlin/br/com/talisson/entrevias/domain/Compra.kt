@@ -190,6 +190,10 @@ object TipoOcorrencia {
 @Serializable
 data class OcorrenciaPedido(val tipo: String, val minutos: Int = 0)
 
+/** Gestor: uma viagem do dia com o que já foi registrado nela e quantas compras pagas seriam afetadas. */
+@Serializable
+data class ViagemDoGestor(val viagem: Viagem, val atrasoMin: Int = 0, val cancelada: Boolean = false, val comprasPagas: Int = 0)
+
 @Serializable
 data class OcorrenciaResultado(val pedidosAfetados: Int, val reembolsados: Int = 0)
 

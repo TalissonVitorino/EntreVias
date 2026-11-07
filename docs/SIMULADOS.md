@@ -51,13 +51,13 @@ Cuidado: com `CAIXA_DE_SAIDA_DEV=true` qualquer pessoa que alcance o servidor l�
 
 **Só dentro do app.** Os avisos (compra, cancelamento, atraso, horário alterado, viagem cancelada, conexão em risco, resposta do
 suporte) são gravados e aparecem no sino e na tela Avisos. **Push, e-mail e WhatsApp não estão ligados.**
-Quem gera atraso, mudança de horário e cancelamento é o **gestor, pela API** (`POST /api/gestor/viagens/{id}/ocorrencia`):
+Quem gera atraso, mudança de horário e cancelamento é o **gestor, no app (Conta → Viagens, ajuda e reclamações) ou pela API** (`POST /api/gestor/viagens/{id}/ocorrencia`):
 ainda não há tela para isso.
 
 ## Suporte (F1)
 
 **Não é um atendimento ao vivo.** O pedido vira um chamado com protocolo (`AJ-xxxxx`); o gestor lê (`GET /api/gestor/chamados`) e
-responde (`POST /api/gestor/chamados/{id}/resposta`), também só pela API, e quem pediu vê a resposta no app e recebe um aviso.
+responde (`POST /api/gestor/chamados/{id}/resposta`), também no app ou pela API, e quem pediu vê a resposta no app e recebe um aviso.
 O suporte de verdade é de uma empresa terceira. Troca por produção: integrar a fila de atendimento dela.
 
 ## Avaliação e reclamação (F2)
@@ -77,7 +77,6 @@ O suporte de verdade é de uma empresa terceira. Troca por produção: integrar 
   então toda conexão é no mesmo terminal. A tela mostra a infraestrutura desse terminal e a caminhada até o embarque.
 - **Filtro "assento PcD livre"**: só existe o filtro de terminais acessíveis.
 - **Alerta de preço** e nomear trajetos salvos (E1).
-- **Tela do gestor** para ocorrências, chamados e reclamações (hoje só API).
 
 ## Dados de viagens, preços, atrasos, terminais
 

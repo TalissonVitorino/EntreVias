@@ -93,6 +93,33 @@ class OcorrenciasRotasTest {
         assertEquals(HttpStatusCode.BadRequest, client.req(HttpMethod.Post, "/api/gestor/viagens/${trecho.id}/ocorrencia", g.token, "{quebrado").status)
     }
 
+    // ---------- painel do gestor ----------
+
+    private suspend fun HttpClient.painel(g: Pessoa?, data: String = "2026-11-20") = req(HttpMethod.Get, "/api/gestor/viagens?data=$data", g?.token)
+
+    @Test fun painelSoParaGestorEExigeData() = comApp {
+        val g = pessoa(PAPEL_GESTOR); val v = pessoa()
+        assertEquals(HttpStatusCode.Unauthorized, client.painel(null).status)
+        assertEquals(HttpStatusCode.Forbidden, client.painel(v).status)
+        assertEquals(HttpStatusCode.BadRequest, client.painel(g, "ontem").status)
+        assertEquals(HttpStatusCode.OK, client.painel(g).status)
+        assertEquals("[]", client.painel(g, "2030-01-01").bodyAsText())
+    }
+
+    @Test fun painelMostraAOcorrenciaRegistradaEAsComprasPagas() = comApp {
+        val g = pessoa(PAPEL_GESTOR); val comprou = pessoa(); val soCarrinho = pessoa()
+        val antes = json.decodeFromString<List<ViagemDoGestor>>(client.painel(g).bodyAsText()).single { it.viagem.id == trecho.id }
+        assertEquals(0, antes.atrasoMin); assertFalse(antes.cancelada)
+        comprar(comprou, trecho.id)
+        Compras.criar(soCarrinho.id, NovoPedido(listOf(trecho.id), listOf(soCarrinho.adulto)))
+        client.ocorrencia(g, trecho.id, "atraso", 25)
+        val depois = json.decodeFromString<List<ViagemDoGestor>>(client.painel(g).bodyAsText()).single { it.viagem.id == trecho.id }
+        assertEquals(25, depois.atrasoMin); assertEquals(antes.comprasPagas + 1, depois.comprasPagas, "carrinho não conta, só compra paga")
+        client.ocorrencia(g, trecho.id, "cancelada")
+        val cancelada = json.decodeFromString<List<ViagemDoGestor>>(client.painel(g).bodyAsText()).single { it.viagem.id == trecho.id }
+        assertTrue(cancelada.cancelada); assertEquals(0, cancelada.atrasoMin)
+    }
+
     // ---------- avisos ----------
 
     @Test fun atrasoAvisaSoQuemComprouAquelaViagemEMostraONovoHorario() = comApp {

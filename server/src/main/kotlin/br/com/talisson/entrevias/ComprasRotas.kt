@@ -113,7 +113,13 @@ fun Route.rotasDeCompra() {
         Notificacoes.marcarLidas(u.id); call.respond(AvisoApi("Marcadas como lidas."))
     }
 
-    // D4: o gestor registra o que aconteceu com uma viagem; quem comprou é avisado. Hoje só pela API (sem tela).
+    // D4: o gestor vê as viagens do dia e registra o que aconteceu com uma; quem comprou é avisado.
+    get("/api/gestor/viagens") {
+        call.exigeGestor() ?: return@get
+        val data = call.request.queryParameters["data"]?.let { runCatching { java.time.LocalDate.parse(it) }.getOrNull() }
+            ?: return@get call.erro(HttpStatusCode.BadRequest, "Informe data=AAAA-MM-DD.")
+        call.respond(Ocorrencias.painel(data))
+    }
     post("/api/gestor/viagens/{id}/ocorrencia") {
         call.exigeGestor() ?: return@post
         val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Viagem não encontrada.")
@@ -124,7 +130,7 @@ fun Route.rotasDeCompra() {
     // D5: a viagem em andamento ou as próximas, com a etapa de cada trecho.
     get("/api/viagens-ativas") { val u = call.exigeLogin() ?: return@get; call.respond(Ocorrencias.ativas(u.id)) }
 
-    // F1: ajuda. A pessoa abre e acompanha os próprios chamados; o gestor lê todos e responde (por enquanto só pela API).
+    // F1: ajuda. A pessoa abre e acompanha os próprios chamados; o gestor lê todos e responde (tela de gestão no app).
     post("/api/chamados") {
         val u = call.exigeLogin() ?: return@post
         if (!call.limitar(Limites.chamadoPorUsuario, u.id.toString())) return@post

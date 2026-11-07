@@ -4,6 +4,10 @@ import br.com.talisson.entrevias.domain.AvisoApi
 import br.com.talisson.entrevias.domain.InfraTerminal
 import br.com.talisson.entrevias.domain.Avaliacao
 import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.OcorrenciaPedido
+import br.com.talisson.entrevias.domain.OcorrenciaResultado
+import br.com.talisson.entrevias.domain.RespostaChamado
+import br.com.talisson.entrevias.domain.ViagemDoGestor
 import br.com.talisson.entrevias.domain.NovaAvaliacao
 import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.CancelamentoPedido
@@ -157,6 +161,11 @@ class Api(private val base: String = urlBase()) {
     suspend fun abrirChamado(token: String, p: NovoChamado): Resp<Chamado> = chamar { http.post("$base/api/chamados") { auth(token); json(p) } }
     suspend fun avaliar(token: String, pedidoId: Int, trecho: Int, p: NovaAvaliacao): Resp<Avaliacao> = chamar { http.post("$base/api/pedidos/$pedidoId/trechos/$trecho/avaliacao") { auth(token); json(p) } }
     suspend fun avaliacoes(token: String, pedidoId: Int): Resp<List<Avaliacao>> = chamar { http.get("$base/api/pedidos/$pedidoId/avaliacoes") { auth(token) } }
+    suspend fun gestorViagens(token: String, data: Data): Resp<List<ViagemDoGestor>> = chamar { http.get("$base/api/gestor/viagens") { auth(token); parameter("data", data.iso()) } }
+    suspend fun registrarOcorrencia(token: String, viagemId: Int, p: OcorrenciaPedido): Resp<OcorrenciaResultado> = chamar { http.post("$base/api/gestor/viagens/$viagemId/ocorrencia") { auth(token); json(p) } }
+    suspend fun gestorChamados(token: String): Resp<List<Chamado>> = chamar { http.get("$base/api/gestor/chamados") { auth(token) } }
+    suspend fun responderChamado(token: String, id: Int, texto: String): Resp<Chamado> = chamar { http.post("$base/api/gestor/chamados/$id/resposta") { auth(token); json(RespostaChamado(texto)) } }
+    suspend fun gestorReclamacoes(token: String): Resp<List<Avaliacao>> = chamar { http.get("$base/api/gestor/reclamacoes") { auth(token) } }
     suspend fun avisos(token: String): Resp<List<Notificacao>> = chamar { http.get("$base/api/notificacoes") { auth(token) } }
     suspend fun marcarAvisosLidos(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/notificacoes/lidas") { auth(token) } }
 }

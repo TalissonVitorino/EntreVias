@@ -92,6 +92,8 @@ fun TelaConta(e: Estado) {
             T("Gestão", 20, FontWeight.Bold, ls = -0.4f)
             T("Empresas parceiras que aparecem nas buscas.", 14, cor = c.muted)
             Botao("Empresas parceiras", { e.ir(Tela.EMPRESAS) }, Modifier.fillMaxWidth())
+            T("Registrar atrasos, responder pedidos de ajuda e ler reclamações.", 14, cor = c.muted)
+            Botao("Viagens, ajuda e reclamações", { e.gestorAviso = null; e.ir(Tela.GESTAO) }, Modifier.fillMaxWidth())
         }
         Botao("Sair da conta", { e.sair() }, Modifier.fillMaxWidth())
     }
