@@ -298,4 +298,10 @@ class CompraEstadoTest {
         val corpo = chamadas("POST", "/api/pedidos").single()
         assertTrue("\"viagemIds\":[101,102]" in corpo && "\"viagemIdsVolta\":[201]" in corpo, corpo)
     }
+
+    @Test fun abrirOAppJaCarregaOsAvisosParaOSeloDoSino() {
+        val e = estado()   // só restaura a sessão: ninguém pediu os avisos
+        esperar { e.avisos.isNotEmpty() }
+        assertEquals(1, e.avisosNaoLidos)
+    }
 }

@@ -174,7 +174,7 @@ class Estado(
             if (token != null) return
             val t = sessaoSalva.token() ?: return
             when (val r = api.perfil(t)) {
-                is Resp.Ok -> { token = t; usuario = r.valor }
+                is Resp.Ok -> { token = t; usuario = r.valor; carregarAvisos() }   // o selo do sino já vale ao abrir o app
                 is Resp.Falha -> if (r.status == 401) sessaoSalva.apagar()
             }
         } finally { sessaoVerificada = true }
