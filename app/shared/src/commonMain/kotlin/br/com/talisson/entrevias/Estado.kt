@@ -15,7 +15,9 @@ import br.com.talisson.entrevias.domain.FaixaHorario
 import br.com.talisson.entrevias.domain.ValidacaoAjuda
 import br.com.talisson.entrevias.domain.NovoChamado
 import br.com.talisson.entrevias.domain.NovaAvaliacao
+import br.com.talisson.entrevias.domain.Alternativa
 import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.RemarcacaoPedido
 import br.com.talisson.entrevias.domain.Comprovante
 import br.com.talisson.entrevias.domain.Avaliacao
 import br.com.talisson.entrevias.domain.OcorrenciaPedido
@@ -67,7 +69,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS,
-    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR, GESTAO, COMPROVANTE }
+    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR, GESTAO, COMPROVANTE, REMARCAR }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -563,6 +565,80 @@ class Estado(
     fun abrirDetalhe(p: Pedido) { pedidoAberto = p; limparMensagensDaCompra(); ir(Tela.COMPRA_DETALHE) }
     fun abrirBilhetes(p: Pedido) { pedidoAberto = p; ir(Tela.BILHETES) }
 
+    // ---------- remarcação: troca um trecho de uma compra paga (uma vez, até 2 h antes, sem taxa, preço igual ou menor) ----------
+    var remarcarTrecho by mutableStateOf<Int?>(null)
+    val alternativas = mutableStateListOf<Alternativa>()
+    var alternativasCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var alternativaEscolhida by mutableStateOf<Alternativa?>(null)
+    var remarcarMapa by mutableStateOf<MapaDePoltronas?>(null)
+    var remarcarPoltronas by mutableStateOf<List<Int>>(emptyList())
+
+    /** Trechos que ainda dá para trocar: não cancelados e com a saída a 2 h ou mais (pelo relógio do servidor). */
+    fun trechosRemarcaveis(p: Pedido) = p.trechos.filter { !it.cancelada && it.saidaReal - p.agora >= RegrasDePreco.REMARCACAO_ANTECEDENCIA_SEG }
+    fun podeRemarcar(p: Pedido) = p.status == StatusPedido.PAGO && p.remarcadaEm == null && trechosRemarcaveis(p).isNotEmpty()
+    val poltronasDaRemarcacao get() = pedidoAberto?.let { RegrasDePreco.poltronasNecessarias(it.passageiros.map { q -> q.categoria }) } ?: 0
+    val remarcacaoComAcessibilidade get() = pedidoAberto?.passageiros?.any { it.categoria != br.com.talisson.entrevias.domain.CategoriaPassageiro.COLO && !it.acessibilidade.isNullOrBlank() } == true
+
+    fun abrirRemarcacao(p: Pedido) {
+        pedidoAberto = p; limparMensagensDaCompra()
+        val primeiro = trechosRemarcaveis(p).firstOrNull()?.ordem
+        alternativas.clear(); alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList(); remarcarTrecho = primeiro
+        ir(Tela.REMARCAR)
+        if (primeiro != null) carregarAlternativas()
+    }
+
+    fun escolherTrechoDaRemarcacao(ordem: Int) {
+        remarcarTrecho = ordem; alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList(); limparMensagensDaCompra(); carregarAlternativas()
+    }
+
+    private fun carregarAlternativas() {
+        val t = token ?: return; val p = pedidoAberto ?: return; val ordem = remarcarTrecho ?: return
+        escopo.launch {
+            alternativasCarga = Carga.Carregando; alternativas.clear()
+            when (val r = api.alternativas(t, p.id, ordem)) {
+                is Resp.Ok -> { alternativas.addAll(r.valor); alternativasCarga = Carga.Pronto }
+                is Resp.Falha -> { alternativasCarga = Carga.Erro(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun escolherAlternativa(a: Alternativa) {
+        alternativaEscolhida = a; remarcarMapa = null; remarcarPoltronas = emptyList(); limparMensagensDaCompra(); carregarMapaDaRemarcacao()
+    }
+
+    fun carregarMapaDaRemarcacao() {
+        val t = token ?: return; val p = pedidoAberto ?: return; val ordem = remarcarTrecho ?: return; val a = alternativaEscolhida ?: return
+        escopo.launch { when (val r = api.mapaDaAlternativa(t, p.id, ordem, a.viagemId)) { is Resp.Ok -> remarcarMapa = r.valor; is Resp.Falha -> falhouNaCompra(r) } }
+    }
+
+    fun alternarPoltronaDaRemarcacao(n: Int) {
+        val atual = remarcarPoltronas
+        remarcarPoltronas = if (n in atual) atual - n else if (atual.size < poltronasDaRemarcacao) atual + n else atual
+        limparMensagensDaCompra()
+    }
+
+    fun voltarDasAlternativas() { alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList(); limparMensagensDaCompra() }
+
+    fun confirmarRemarcacao() {
+        val p = pedidoAberto ?: return; val ordem = remarcarTrecho ?: return; val a = alternativaEscolhida ?: return
+        if (remarcarPoltronas.size != poltronasDaRemarcacao) { compraErro = "Escolha $poltronasDaRemarcacao ${if (poltronasDaRemarcacao == 1) "poltrona" else "poltronas"}."; return }
+        naCompra { t ->
+            when (val r = api.remarcar(t, p.id, RemarcacaoPedido(ordem, a.viagemId, remarcarPoltronas))) {
+                is Resp.Ok -> {
+                    pedidoAberto = r.valor
+                    // o bilhete guardado no aparelho é o antigo: troca pelo novo (os códigos mudaram)
+                    if (estaGuardado(p)) guardarBilhetes(r.valor)
+                    carregarHistorico(); carregarAvisos()
+                    compraAviso = "Viagem remarcada. Seus bilhetes foram refeitos: use os novos."
+                    alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList()
+                    ir(Tela.COMPRA_DETALHE)
+                }
+                is Resp.Falha -> { falhouNaCompra(r); if (r.status == 409) { remarcarPoltronas = emptyList(); remarcarMapa = null; carregarMapaDaRemarcacao() } }
+            }
+        }
+    }
+
+
     // ---------- comprovante: a tela e o texto vêm do servidor; o PDF abre no navegador por um link temporário ----------
     var comprovante by mutableStateOf<Comprovante?>(null)
     var comprovanteCarga by mutableStateOf<Carga>(Carga.Pronto)
@@ -607,6 +683,7 @@ class Estado(
         bilhetesGuardados.removeAll { it.id == p.id }; bilhetesGuardados.add(p)
         runCatching { armazenamento.gravar(CHAVE_BILHETES, kotlinx.serialization.json.Json.encodeToString(bilhetesGuardados.toList())) }
     }
+    private fun persistirBilhetesGuardados() { runCatching { armazenamento.gravar(CHAVE_BILHETES, kotlinx.serialization.json.Json.encodeToString(bilhetesGuardados.toList())) } }
     fun apagarBilhetesGuardados() { bilhetesGuardados.clear(); runCatching { armazenamento.gravar(CHAVE_BILHETES, null) } }
 
     // D5: viagem em andamento. Sem internet, usa os bilhetes guardados no aparelho e o relógio do aparelho.
@@ -756,7 +833,7 @@ class Estado(
         val p = pedidoAberto ?: return
         naCompra { t ->
             when (val x = api.cancelar(t, p.id, motivo)) {
-                is Resp.Ok -> { pedidoAberto = x.valor; bilhetesGuardados.removeAll { it.id == p.id }; carregarHistorico(); compraAviso = "Compra cancelada. O reembolso sai em até 72 horas."; ir(Tela.COMPRA_DETALHE) }
+                is Resp.Ok -> { pedidoAberto = x.valor; bilhetesGuardados.removeAll { it.id == p.id }; persistirBilhetesGuardados(); carregarHistorico(); compraAviso = "Compra cancelada. O reembolso sai em até 72 horas."; ir(Tela.COMPRA_DETALHE) }
                 is Resp.Falha -> falhouNaCompra(x)
             }
         }

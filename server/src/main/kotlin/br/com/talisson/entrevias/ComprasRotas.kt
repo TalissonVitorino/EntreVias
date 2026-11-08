@@ -11,6 +11,7 @@ import br.com.talisson.entrevias.domain.NovaAvaliacao
 import br.com.talisson.entrevias.domain.NovoPedido
 import br.com.talisson.entrevias.domain.OcorrenciaPedido
 import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
+import br.com.talisson.entrevias.domain.RemarcacaoPedido
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -106,6 +107,27 @@ fun Route.rotasDeCompra() {
         val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
         val p = call.corpo<CancelamentoPedido>() ?: CancelamentoPedido()
         call.regra { Compras.cancelar(u.id, id, p.motivo) }
+    }
+
+    // Remarcação (uma vez, até 2 h antes, sem taxa, viagem de preço igual ou menor): alternativas, mapa e a troca.
+    get("/api/pedidos/{id}/trechos/{trecho}/alternativas") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id(); val t = call.id("trecho")
+        if (id == null || t == null) return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { Compras.alternativas(u.id, id, t) }
+    }
+    get("/api/pedidos/{id}/trechos/{trecho}/alternativas/{viagem}/poltronas") {
+        val u = call.exigeLogin() ?: return@get
+        val id = call.id(); val t = call.id("trecho"); val v = call.id("viagem")
+        if (id == null || t == null || v == null) return@get call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        call.regra { Compras.mapaDaAlternativa(u.id, id, t, v) }
+    }
+    post("/api/pedidos/{id}/remarcar") {
+        val u = call.exigeLogin() ?: return@post
+        if (!call.limitar(Limites.remarcacaoPorUsuario, u.id.toString())) return@post
+        val id = call.id() ?: return@post call.erro(HttpStatusCode.NotFound, "Pedido não encontrado.")
+        val p = call.corpo<RemarcacaoPedido>() ?: return@post call.erro(HttpStatusCode.BadRequest, "Dados inválidos.")
+        call.regra { Compras.remarcar(u.id, id, p) }
     }
 
     // Comprovante: o conteúdo (tela e texto) e o link temporário do PDF. O PDF em si abre sem login, só com o token do link.

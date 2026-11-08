@@ -39,5 +39,6 @@ object Limites {
     var cupomPorUsuario = LimiteDeTaxa(max = 10, janelaSeg = 600)
     var chamadoPorUsuario = LimiteDeTaxa(max = 5, janelaSeg = 3600)
     var comprovantePorUsuario = LimiteDeTaxa(max = 30, janelaSeg = 3600)
+    var remarcacaoPorUsuario = LimiteDeTaxa(max = 20, janelaSeg = 3600)
     var confiarNoProxy = System.getenv("CONFIAR_NO_PROXY") == "true"
 }

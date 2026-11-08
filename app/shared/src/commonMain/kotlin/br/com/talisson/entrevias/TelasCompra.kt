@@ -213,7 +213,7 @@ fun TelaPoltronas(e: Estado) {
 }
 
 @Composable
-private fun Poltrona(n: Int, ocupada: Boolean, pcd: Boolean, bloqueadaPcd: Boolean, selecionada: Boolean, onClick: () -> Unit) {
+internal fun Poltrona(n: Int, ocupada: Boolean, pcd: Boolean, bloqueadaPcd: Boolean, selecionada: Boolean, onClick: () -> Unit) {
     val c = cores()
     val livre = !ocupada && !bloqueadaPcd
     val forma = RoundedCornerShape(12.dp)
@@ -229,7 +229,7 @@ private fun Poltrona(n: Int, ocupada: Boolean, pcd: Boolean, bloqueadaPcd: Boole
 }
 
 @Composable
-private fun Legenda(cor: androidx.compose.ui.graphics.Color, rotulo: String) {
+internal fun Legenda(cor: androidx.compose.ui.graphics.Color, rotulo: String) {
     Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(14.dp).clip(RoundedCornerShape(4.dp)).background(cor).border(1.dp, cores().line, RoundedCornerShape(4.dp)))
         T(rotulo, 13, cor = cores().muted)

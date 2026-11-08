@@ -84,6 +84,7 @@ object Banco {
         sql.lines().map { it.substringBefore("--") }.joinToString("\n").split(";").map { it.trim() }.filter { it.isNotEmpty() }
             .forEach { cmd -> c.createStatement().use { it.execute(cmd) } }
         acrescentar("pedido_trecho", "volta", "INTEGER NOT NULL DEFAULT 0 CHECK (volta IN (0,1))")   // B1: ida e volta numa compra só
+        acrescentar("pedido", "remarcada_em", "INTEGER")   // remarcação: uma vez por compra
     }
 
     private fun criarEsquema(c: Connection) {

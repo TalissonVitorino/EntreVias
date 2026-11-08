@@ -1,5 +1,6 @@
 package br.com.talisson.entrevias
 
+import br.com.talisson.entrevias.domain.Alternativa
 import br.com.talisson.entrevias.domain.Bilhete
 import br.com.talisson.entrevias.domain.CancelamentoPrevia
 import br.com.talisson.entrevias.domain.CategoriaPassageiro
@@ -13,8 +14,10 @@ import br.com.talisson.entrevias.domain.Pedido
 import br.com.talisson.entrevias.domain.PedidoPassageiro
 import br.com.talisson.entrevias.domain.PedidoTrecho
 import br.com.talisson.entrevias.domain.RegrasDePreco
+import br.com.talisson.entrevias.domain.RemarcacaoPedido
 import br.com.talisson.entrevias.domain.StatusPagamento
 import br.com.talisson.entrevias.domain.StatusPedido
+import br.com.talisson.entrevias.domain.TipoNotificacao
 import br.com.talisson.entrevias.domain.Totais
 import br.com.talisson.entrevias.domain.ValidacaoPerfil
 import java.security.SecureRandom
@@ -88,6 +91,7 @@ object Compras {
             rs.getString("cupom"), rs.getLong("criado_em"),
             rs.getLong("pago_em").takeIf { !rs.wasNull() }, rs.getString("metodo"), rs.getLong("reserva_expira_em").takeIf { !rs.wasNull() },
             rs.getLong("cancelado_em").takeIf { !rs.wasNull() }, rs.getInt("reembolso").takeIf { !rs.wasNull() }, bilhetesDe(c, id), Contas.agora(),
+            rs.getLong("remarcada_em").takeIf { !rs.wasNull() },
         )
     }
 
@@ -382,6 +386,100 @@ object Compras {
     }
 
     /** Cancelamento por iniciativa da empresa (viagem cancelada): reembolso de 100%, sem taxa, sem checar a data. */
+    // ---------- remarcação: troca UM trecho de uma compra paga por outra viagem da mesma rota ----------
+    // Regras (demonstrativas, ver docs/SIMULADOS.md): uma vez por compra, até 2 h antes da saída do trecho, sem taxa,
+    // só para viagem de preço IGUAL OU MENOR (não se cobra nem se devolve diferença: o valor pago não muda).
+
+    private fun remarcavel(usuarioId: Int, pedidoId: Int, ordem: Int): Pair<Pedido, PedidoTrecho> {
+        val ped = pedido(usuarioId, pedidoId) ?: throw ErroDeCompra(404, "Pedido não encontrado.")
+        if (ped.status != StatusPedido.PAGO) throw ErroDeCompra(409, "Só dá para remarcar uma compra paga.")
+        if (ped.remarcadaEm != null) throw ErroDeCompra(409, "Esta compra já foi remarcada uma vez.")
+        val t = ped.trechos.firstOrNull { it.ordem == ordem } ?: throw ErroDeCompra(404, "Trecho não encontrado.")
+        if (t.cancelada) throw ErroDeCompra(409, "Este trecho foi cancelado pela empresa.")
+        if (t.saidaReal - Contas.agora() < RegrasDePreco.REMARCACAO_ANTECEDENCIA_SEG) throw ErroDeCompra(409, "Só dá para remarcar até ${RegrasDePreco.REMARCACAO_ANTECEDENCIA_SEG / 3600} horas antes da saída.")
+        return ped to t
+    }
+
+    /** A nova viagem tem de sair depois do trecho anterior e chegar antes do próximo, com a folga mínima de conexão. */
+    private fun encaixa(ped: Pedido, t: PedidoTrecho, saida: Long, chegada: Long): Boolean {
+        val minima = Banco.parametros().minimaMin * 60L
+        val ant = ped.trechos.firstOrNull { it.ordem == t.ordem - 1 }; val prox = ped.trechos.firstOrNull { it.ordem == t.ordem + 1 }
+        return (ant == null || saida - ant.chegadaReal >= minima) && (prox == null || prox.saidaReal - chegada >= minima)
+    }
+
+    fun alternativas(usuarioId: Int, pedidoId: Int, ordem: Int): List<Alternativa> {
+        val (ped, t) = remarcavel(usuarioId, pedidoId, ordem)
+        val limite = Contas.agora() + RegrasDePreco.REMARCACAO_ANTECEDENCIA_SEG
+        return Banco.conexao().use { c ->
+            c.prepareStatement(
+                """select v.id, e.nome, l.categoria, v.saida_em, v.chegada_em, v.preco_centavos from viagem v join linha l on l.id = v.linha_id
+                   join empresa e on e.id = l.empresa_id and e.ativa = 1 join terminal o on o.id = l.origem_terminal_id join terminal d on d.id = l.destino_terminal_id
+                   where o.codigo = ? and d.codigo = ? and v.id <> ? and v.saida_em >= ? and v.preco_centavos <= ?
+                     and not exists (select 1 from viagem_estado ve where ve.viagem_id = v.id and ve.cancelada = 1)
+                     and v.id not in (select viagem_id from pedido_trecho where pedido_id = ?)
+                   order by v.saida_em limit 60""",
+            ).use {
+                it.setString(1, t.origem); it.setString(2, t.destino); it.setInt(3, t.viagemId); it.setLong(4, limite); it.setInt(5, t.precoUnitCentavos); it.setInt(6, pedidoId)
+                it.executeQuery().use { rs -> rs.lista { r -> Alternativa(r.getInt(1), r.getString(2), r.getString(3), r.getLong(4), r.getLong(5), r.getInt(6)) } }
+            }
+        }.filter { encaixa(ped, t, it.saidaEm, it.chegadaEm) }
+    }
+
+    private fun alternativa(usuarioId: Int, pedidoId: Int, ordem: Int, viagemId: Int): Alternativa =
+        alternativas(usuarioId, pedidoId, ordem).firstOrNull { it.viagemId == viagemId } ?: throw ErroDeCompra(409, "Essa viagem não está disponível para remarcação.")
+
+    /** Mapa de poltronas da viagem para onde a pessoa quer ir. Só mostra se ela pode mesmo remarcar para lá. */
+    fun mapaDaAlternativa(usuarioId: Int, pedidoId: Int, ordem: Int, viagemId: Int): MapaDePoltronas {
+        alternativa(usuarioId, pedidoId, ordem, viagemId)
+        val reservadas = Banco.conexao().use { c ->
+            liberarVencidas(c)
+            c.prepareStatement("select numero from reserva_assento where viagem_id = ?").use { it.setInt(1, viagemId); it.executeQuery().use { rs -> rs.lista { r -> r.getInt(1) } } }
+        }
+        return MapaDePoltronas(viagemId, RegrasDePreco.POLTRONAS, (ocupadasSimuladas(viagemId) + reservadas).sorted(), RegrasDePreco.POLTRONAS_PCD.sorted(), emptyList())
+    }
+
+    fun remarcar(usuarioId: Int, pedidoId: Int, r: RemarcacaoPedido): Pedido {
+        val (ped, t) = remarcavel(usuarioId, pedidoId, r.trecho)
+        val nova = alternativa(usuarioId, pedidoId, r.trecho, r.viagemId)
+        val necessarias = RegrasDePreco.poltronasNecessarias(ped.passageiros.map { it.categoria })
+        val comAcessibilidade = ped.passageiros.count { it.categoria != CategoriaPassageiro.COLO && !it.acessibilidade.isNullOrBlank() }
+        if (r.poltronas.size != necessarias || r.poltronas.distinct().size != necessarias) throw ErroDeCompra(400, "Escolha exatamente $necessarias poltronas.")
+        if (r.poltronas.any { it !in 1..RegrasDePreco.POLTRONAS }) throw ErroDeCompra(400, "Poltrona inválida.")
+        if (r.poltronas.any { it in ocupadasSimuladas(nova.viagemId) }) throw ErroDeCompra(409, "Uma das poltronas acabou de ser ocupada. Escolha outra.")
+        if (r.poltronas.count { it in RegrasDePreco.POLTRONAS_PCD } > comAcessibilidade) throw ErroDeCompra(409, "As poltronas PcD são para passageiros com necessidade de acessibilidade cadastrada.")
+        return Banco.conexao().use { c ->
+            liberarVencidas(c)
+            c.autoCommit = false
+            try {
+                val rows = c.prepareStatement("update pedido set remarcada_em = ? where id = ? and usuario_id = ? and status = 'pago' and remarcada_em is null").use { it.setLong(1, Contas.agora()); it.setInt(2, pedidoId); it.setInt(3, usuarioId); it.executeUpdate() }
+                if (rows != 1) throw ErroDeCompra(409, "Esta compra já foi remarcada uma vez.")
+                c.prepareStatement("delete from reserva_assento where pedido_id = ? and viagem_id = ?").use { it.setInt(1, pedidoId); it.setInt(2, t.viagemId); it.executeUpdate() }
+                r.poltronas.forEachIndexed { i, n ->
+                    c.prepareStatement("insert into reserva_assento (viagem_id, numero, pedido_id, passageiro_ordem, confirmada, expira_em) values (?,?,?,?,1,null)").use {
+                        it.setInt(1, nova.viagemId); it.setInt(2, n); it.setInt(3, pedidoId); it.setInt(4, i + 1); it.executeUpdate()
+                    }
+                }
+                c.prepareStatement("update pedido_trecho set viagem_id = ? where pedido_id = ? and ordem = ?").use { it.setInt(1, nova.viagemId); it.setInt(2, pedidoId); it.setInt(3, t.ordem); it.executeUpdate() }
+                c.prepareStatement("delete from bilhete where pedido_id = ? and trecho = ?").use { it.setInt(1, pedidoId); it.setInt(2, t.ordem); it.executeUpdate() }
+                val novoTrecho = trechosDe(c, pedidoId).first { it.ordem == t.ordem }
+                val todos = passageirosDe(c, pedidoId)
+                todos.filter { it.categoria != CategoriaPassageiro.COLO }.forEachIndexed { i, q -> inserirBilhete(c, pedidoId, novoTrecho, q.nome, novoTrecho.poltronas.getOrNull(i)) }
+                todos.filter { it.categoria == CategoriaPassageiro.COLO }.forEach { inserirBilhete(c, pedidoId, novoTrecho, it.nome + " (colo)", null) }
+                c.commit(); c.autoCommit = true
+            } catch (e: SQLException) {
+                runCatching { c.rollback() }; c.autoCommit = true
+                if (e.message?.contains("UNIQUE", true) == true || e.message?.contains("PRIMARY KEY", true) == true) throw ErroDeCompra(409, "Uma das poltronas acabou de ser ocupada. Escolha outra.")
+                throw e
+            } catch (e: Exception) { runCatching { c.rollback() }; c.autoCommit = true; throw e }
+            avisar {
+                val cidades = Banco.terminais().associate { it.id to it.cidade }
+                Notificacoes.criar(c, usuarioId, TipoNotificacao.REMARCACAO, "Viagem remarcada · ${cidades[t.origem] ?: t.origem} → ${cidades[t.destino] ?: t.destino}",
+                    "Nova saída: ${java.time.format.DateTimeFormatter.ofPattern("dd/MM HH:mm").format(java.time.Instant.ofEpochSecond(nova.saidaEm).atOffset(java.time.ZoneOffset.ofHours(-3)))} (${nova.empresa}). Seus bilhetes foram refeitos: use os novos em Viagens.", pedidoId)
+            }
+            pedido(usuarioId, pedidoId)!!
+        }
+    }
+
     fun cancelarPelaEmpresa(c: Connection, usuarioId: Int, id: Int) {
         val total = c.prepareStatement("select total from pedido where id = ? and usuario_id = ? and status = 'pago'").use { it.setInt(1, id); it.setInt(2, usuarioId); it.executeQuery().use { rs -> if (rs.next()) rs.getInt(1) else return } }
         c.autoCommit = false

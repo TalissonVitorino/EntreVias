@@ -137,6 +137,8 @@ fun TelaCompraDetalhe(e: Estado) {
                 if (jaChegou(t.chegadaReal, p.agora)) Botao("Avaliar ${e.cidade(t.origem)} → ${e.cidade(t.destino)}", { e.abrirAvaliacao(p, t.ordem) }, Modifier.fillMaxWidth(), ativo = true)
             }
             if (p.trechos.none { jaChegou(it.chegadaReal, p.agora) }) T("Você poderá avaliar cada trecho depois de chegar ao destino.", 13, cor = c.muted)
+            if (e.podeRemarcar(p)) Botao("Remarcar viagem", { e.abrirRemarcacao(p) }, Modifier.fillMaxWidth(), ativo = true)
+            else if (p.remarcadaEm != null) T("Esta compra já foi remarcada uma vez.", 13, cor = c.muted)
             Botao("Cancelar compra", { e.abrirCancelamento(p) }, Modifier.fillMaxWidth())
         }
         if (p.status == StatusPedido.PAGO || p.status == StatusPedido.CANCELADO) Botao("Ver comprovante", { e.abrirComprovante(p) }, Modifier.fillMaxWidth())

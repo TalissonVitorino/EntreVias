@@ -51,8 +51,15 @@ Cuidado: com `CAIXA_DE_SAIDA_DEV=true` qualquer pessoa que alcance o servidor l�
 
 **Só dentro do app.** Os avisos (compra, cancelamento, atraso, horário alterado, viagem cancelada, conexão em risco, resposta do
 suporte) são gravados e aparecem no sino e na tela Avisos. **Push, e-mail e WhatsApp não estão ligados.**
-Quem gera atraso, mudança de horário e cancelamento é o **gestor, no app (Conta → Viagens, ajuda e reclamações) ou pela API** (`POST /api/gestor/viagens/{id}/ocorrencia`):
-ainda não há tela para isso.
+Quem gera atraso, mudança de horário e cancelamento é o **gestor, no app (Conta → Viagens, ajuda e reclamações) ou pela API** (`POST /api/gestor/viagens/{id}/ocorrencia`).
+
+## Remarcação
+
+**De verdade, com regras de demonstração** (decididas com o grupo, não vêm de nenhuma empresa): uma remarcação por compra, até 2 horas
+antes da saída do trecho, sem taxa, trocando UM trecho por outra viagem da mesma rota, de preço **igual ou menor**. O valor pago não muda
+(não se cobra nem se devolve diferença), as poltronas são escolhidas de novo, os bilhetes do trecho são refeitos (os códigos antigos
+deixam de valer) e a viagem nova precisa encaixar com os outros trechos da compra (folga mínima de conexão). Cobrar ou devolver a
+diferença de preço exigiria o pagamento real e fica para depois. Onde está: `Compras.remarcar` e rotas `/api/pedidos/{id}/trechos/{n}/alternativas` e `/api/pedidos/{id}/remarcar`.
 
 ## Suporte (F1)
 
@@ -71,7 +78,6 @@ O suporte de verdade é de uma empresa terceira. Troca por produção: integrar 
 ## O que o design pede e **não** foi feito
 
 - **Envio do comprovante por e-mail ou WhatsApp.** O comprovante existe na tela, como texto copiável e como PDF (link temporário de 5 min, aberto no navegador do aparelho; o link só vive na memória do servidor).
-- **Remarcação** de viagem (aparece no design do carrinho); só existe o cancelamento.
 - **Conexão entre terminais diferentes** (ex.: a baldeação que exige táxi entre terminais): a base fictícia tem um terminal por cidade,
   então toda conexão é no mesmo terminal. A tela mostra a infraestrutura desse terminal e a caminhada até o embarque.
 - **Filtro "assento PcD livre"**: só existe o filtro de terminais acessíveis.

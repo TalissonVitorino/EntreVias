@@ -9,6 +9,8 @@ import kotlinx.serialization.Serializable
 object RegrasDePreco {
     const val CRIANCA_PCT = 50
     const val TAXA_CANCELAMENTO_PCT = 5
+    /** Remarcação: só até 2 horas antes da saída do trecho, uma vez por compra, sem taxa e sem diferença de preço (ver docs/SIMULADOS.md). */
+    const val REMARCACAO_ANTECEDENCIA_SEG = 2 * 3600L
     const val MAX_PASSAGEIROS = 6
     const val RESERVA_SEG = 15 * 60L
     const val PIX_VALIDADE_SEG = 10 * 60L
@@ -114,6 +116,8 @@ data class Pedido(
     val bilhetes: List<Bilhete> = emptyList(),
     /** O relógio do SERVIDOR no momento da resposta. Prazos (reserva, Pix) são dele; o app conta a partir daqui, nunca do relógio do aparelho. */
     val agora: Long = 0,
+    /** Quando a compra foi remarcada (só se pode uma vez); `null` = nunca. */
+    val remarcadaEm: Long? = null,
 ) {
     val saidaEm get() = trechos.minOf { it.saidaReal }
     val ehIdaEVolta get() = trechos.any { it.volta }
@@ -173,6 +177,7 @@ object TipoNotificacao {
     const val HORARIO = "horario"
     const val VIAGEM_CANCELADA = "viagem_cancelada"
     const val CONEXAO_RISCO = "conexao_risco"
+    const val REMARCACAO = "remarcacao"
     const val SUPORTE = "suporte"
 }
 
@@ -286,3 +291,12 @@ data class Comprovante(val codigo: String, val secoes: List<SecaoComprovante>, v
 /** Resposta de `POST /api/pedidos/{id}/comprovante/link`: caminho curto, de uso temporário, que abre o PDF sem login. */
 @Serializable
 data class LinkDoComprovante(val caminho: String, val validoPorSeg: Int)
+
+// ---------------------------------------------------------------- remarcação
+
+/** Uma viagem para onde o trecho pode ser trocado: mesma rota, de preço igual ou menor, que encaixa com os outros trechos. */
+@Serializable
+data class Alternativa(val viagemId: Int, val empresa: String, val categoria: String, val saidaEm: Long, val chegadaEm: Long, val precoCentavos: Int)
+
+@Serializable
+data class RemarcacaoPedido(val trecho: Int, val viagemId: Int, val poltronas: List<Int>)
