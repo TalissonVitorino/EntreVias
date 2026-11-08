@@ -53,10 +53,11 @@ fun EntreViasTheme(content: @Composable () -> Unit) {
 fun T(
     t: String, size: Int = 15, w: FontWeight = FontWeight.Normal, cor: Color = Color.Unspecified,
     mod: Modifier = Modifier, align: TextAlign? = null, ls: Float = 0f, lh: Int = 0,
+    maxLines: Int = Int.MAX_VALUE, softWrap: Boolean = true,
 ) {
     Text(
         t, modifier = mod, color = if (cor == Color.Unspecified) cores().fg else cor,
         fontSize = size.sp, fontWeight = w, textAlign = align, letterSpacing = ls.sp,
-        lineHeight = if (lh > 0) lh.sp else TextUnit.Unspecified,
+        lineHeight = if (lh > 0) lh.sp else TextUnit.Unspecified, maxLines = maxLines, softWrap = softWrap,
     )
 }

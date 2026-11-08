@@ -139,7 +139,8 @@ fun App() {
                             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                         ) {
                             icone(if (ativa) c.primary else c.fg)
-                            T(rotulo, 14, FontWeight.SemiBold, if (ativa) c.primary else c.fg)
+                            // 12 e numa linha só: no iPhone a fonte do sistema é mais larga e "Planejamentos" quebrava em duas linhas
+                            T(rotulo, 12, FontWeight.SemiBold, if (ativa) c.primary else c.fg, maxLines = 1, softWrap = false)
                         }
                     }
                     Aba("Buscar", naBusca, { e.ir(Tela.BUSCAR) }) { IconeBuscar(it) }

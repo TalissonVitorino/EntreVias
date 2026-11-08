@@ -167,7 +167,8 @@ fun Pilula(txt: String) {
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(Modifier.size(6.dp).clip(CircleShape).background(c.muted))
-        T(txt, 13, FontWeight.Medium)
+        // numa linha só e 12: no iPhone, com o sino ao lado, a etiqueta quebrava em duas linhas
+        T(txt, 12, FontWeight.Medium, maxLines = 1, softWrap = false)
     }
 }
 
