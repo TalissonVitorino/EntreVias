@@ -83,10 +83,17 @@ fun TelaConta(e: Estado) {
             Mensagens(e)
             Botao(if (e.contaOcupada) "Salvando…" else "Salvar", { e.salvarPerfil(PerfilPedido(nome, celular)) }, Modifier.fillMaxWidth(), primario = true)
         }
+        Cartao {
+            T("Viagens", 20, FontWeight.Bold, ls = -0.4f)
+            Botao("Formas de pagamento", { e.limparMensagensDaCarteira(); e.ir(Tela.PAGAMENTOS) }, Modifier.fillMaxWidth())
+            Botao("Passageiros", { e.limparMensagensDaCarteira(); e.ir(Tela.PASSAGEIROS) }, Modifier.fillMaxWidth())
+        }
         if (u.ehGestor) Cartao {
             T("Gestão", 20, FontWeight.Bold, ls = -0.4f)
             T("Empresas parceiras que aparecem nas buscas.", 14, cor = c.muted)
             Botao("Empresas parceiras", { e.ir(Tela.EMPRESAS) }, Modifier.fillMaxWidth())
+            T("Registrar atrasos, responder pedidos de ajuda e ler reclamações.", 14, cor = c.muted)
+            Botao("Viagens, ajuda e reclamações", { e.gestorAviso = null; e.ir(Tela.GESTAO) }, Modifier.fillMaxWidth())
         }
         Botao("Sair da conta", { e.sair() }, Modifier.fillMaxWidth())
     }
@@ -214,7 +221,7 @@ fun TelaCadastro(e: Estado) {
             CampoTexto("Celular (opcional)", e.cadCelular, { e.cadCelular = it }, dica = "(41) 99999-0000", teclado = KeyboardType.Phone)
             CampoTexto("Senha (mínimo 8 caracteres)", e.cadSenha, { e.cadSenha = it }, senha = true)
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                Chave(e.cadAceita) { e.cadAceita = it }
+                Chave(e.cadAceita) { e.marcarAceite(it) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     T("Li e aceito:", 14, cor = c.muted)
                     Link("Termos de uso  ›") { e.abrirDocumento(Documento.TERMOS) }

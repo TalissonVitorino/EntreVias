@@ -1,6 +1,35 @@
 package br.com.talisson.entrevias
 
 import br.com.talisson.entrevias.domain.AvisoApi
+import br.com.talisson.entrevias.domain.InfraTerminal
+import br.com.talisson.entrevias.domain.Avaliacao
+import br.com.talisson.entrevias.domain.Alternativa
+import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.RemarcacaoPedido
+import br.com.talisson.entrevias.domain.Comprovante
+import br.com.talisson.entrevias.domain.LinkDoComprovante
+import br.com.talisson.entrevias.domain.OcorrenciaPedido
+import br.com.talisson.entrevias.domain.OcorrenciaResultado
+import br.com.talisson.entrevias.domain.RespostaChamado
+import br.com.talisson.entrevias.domain.ViagemDoGestor
+import br.com.talisson.entrevias.domain.NovaAvaliacao
+import br.com.talisson.entrevias.domain.NovoChamado
+import br.com.talisson.entrevias.domain.CancelamentoPedido
+import br.com.talisson.entrevias.domain.CancelamentoPrevia
+import br.com.talisson.entrevias.domain.CupomPedido
+import br.com.talisson.entrevias.domain.EscolhaDePoltronas
+import br.com.talisson.entrevias.domain.EscolhasPedido
+import br.com.talisson.entrevias.domain.MapaDePoltronas
+import br.com.talisson.entrevias.domain.NovoPedido
+import br.com.talisson.entrevias.domain.Notificacao
+import br.com.talisson.entrevias.domain.Pagamento
+import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
+import br.com.talisson.entrevias.domain.Pedido
+import br.com.talisson.entrevias.domain.ViagemAtiva
+import br.com.talisson.entrevias.domain.FormaPagamento
+import br.com.talisson.entrevias.domain.FormaPagamentoPedido
+import br.com.talisson.entrevias.domain.Passageiro
+import br.com.talisson.entrevias.domain.PassageiroPedido
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.CodigoPedido
 import br.com.talisson.entrevias.domain.EsqueciSenhaPedido
@@ -21,6 +50,8 @@ import br.com.talisson.entrevias.domain.Viagem
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.HttpRequestBuilder
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
@@ -54,6 +85,7 @@ class Api(private val base: String = urlBase()) {
     suspend fun parametrosRisco(): ParametrosRisco = http.get("$base/api/parametros/risco").body()
     suspend fun viagens(data: Data, dias: Int = 3): List<Viagem> =
         http.get("$base/api/viagens") { parameter("data", data.iso()); parameter("dias", dias) }.body()
+    suspend fun infraTerminais(): List<InfraTerminal> = http.get("$base/api/terminais/infra").body()
     suspend fun parametrosPlanoB(): ParametrosPlanoB = http.get("$base/api/parametros/planob").body()
 
     // ---------- conta (US8, US9, US11) e empresas (US7) ----------
@@ -96,4 +128,55 @@ class Api(private val base: String = urlBase()) {
     suspend fun enviarVerificacao(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/verificacao/enviar") { header(HttpHeaders.Authorization, "Bearer $token") } }
     suspend fun confirmarEmail(token: String, codigo: String): Resp<Usuario> =
         chamar { http.post("$base/api/verificacao/confirmar") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(CodigoPedido(codigo)) } }
+
+    // ---------- A5 formas de pagamento e A6 passageiros ----------
+
+    private fun HttpRequestBuilder.auth(token: String) = header(HttpHeaders.Authorization, "Bearer $token")
+    private fun HttpRequestBuilder.json(corpo: Any) { contentType(ContentType.Application.Json); setBody(corpo) }
+
+    suspend fun formas(token: String): Resp<List<FormaPagamento>> = chamar { http.get("$base/api/formas-pagamento") { auth(token) } }
+    suspend fun adicionarForma(token: String, p: FormaPagamentoPedido): Resp<FormaPagamento> = chamar { http.post("$base/api/formas-pagamento") { auth(token); json(p) } }
+    suspend fun tornarPadrao(token: String, id: Int): Resp<List<FormaPagamento>> = chamar { http.put("$base/api/formas-pagamento/$id/padrao") { auth(token) } }
+    suspend fun removerForma(token: String, id: Int): Resp<List<FormaPagamento>> = chamar { http.delete("$base/api/formas-pagamento/$id") { auth(token) } }
+
+    suspend fun passageiros(token: String): Resp<List<Passageiro>> = chamar { http.get("$base/api/passageiros") { auth(token) } }
+    suspend fun adicionarPassageiro(token: String, p: PassageiroPedido): Resp<Passageiro> = chamar { http.post("$base/api/passageiros") { auth(token); json(p) } }
+    suspend fun editarPassageiro(token: String, id: Int, p: PassageiroPedido): Resp<Passageiro> = chamar { http.put("$base/api/passageiros/$id") { auth(token); json(p) } }
+    suspend fun removerPassageiro(token: String, id: Int): Resp<List<Passageiro>> = chamar { http.delete("$base/api/passageiros/$id") { auth(token) } }
+
+    // ---------- compra (C1 a C7), histórico e cancelamento (D1 a D3), avisos (D4) ----------
+
+    suspend fun estadoPagamento(): Resp<Map<String, Boolean>> = chamar { http.get("$base/api/pagamento/estado") }
+    suspend fun criarPedido(token: String, p: NovoPedido): Resp<Pedido> = chamar { http.post("$base/api/pedidos") { auth(token); json(p) } }
+    suspend fun pedido(token: String, id: Int): Resp<Pedido> = chamar { http.get("$base/api/pedidos/$id") { auth(token) } }
+    suspend fun pedidos(token: String, filtro: String? = null): Resp<List<Pedido>> = chamar { http.get("$base/api/pedidos") { auth(token); if (filtro != null) parameter("filtro", filtro) } }
+    suspend fun cupom(token: String, id: Int, codigo: String?): Resp<Pedido> =
+        chamar { if (codigo == null) http.delete("$base/api/pedidos/$id/cupom") { auth(token) } else http.put("$base/api/pedidos/$id/cupom") { auth(token); json(CupomPedido(codigo)) } }
+    suspend fun mapa(token: String, pedidoId: Int, viagemId: Int): Resp<MapaDePoltronas> = chamar { http.get("$base/api/pedidos/$pedidoId/poltronas/$viagemId") { auth(token) } }
+    suspend fun escolherPoltronas(token: String, pedidoId: Int, e: List<EscolhaDePoltronas>): Resp<Pedido> = chamar { http.put("$base/api/pedidos/$pedidoId/poltronas") { auth(token); json(EscolhasPedido(e)) } }
+    suspend fun pagarPix(token: String, pedidoId: Int): Resp<Pagamento> = chamar { http.post("$base/api/pedidos/$pedidoId/pagamento/pix") { auth(token) } }
+    suspend fun pagarCartao(token: String, pedidoId: Int, p: PagamentoCartaoPedido): Resp<Pagamento> = chamar { http.post("$base/api/pedidos/$pedidoId/pagamento/cartao") { auth(token); json(p) } }
+    suspend fun pagamento(token: String, id: Int): Resp<Pagamento> = chamar { http.get("$base/api/pagamentos/$id") { auth(token) } }
+    suspend fun simularPix(token: String, id: Int): Resp<Pagamento> = chamar { http.post("$base/api/pagamentos/$id/simular") { auth(token) } }
+    suspend fun previaCancelamento(token: String, id: Int): Resp<CancelamentoPrevia> = chamar { http.get("$base/api/pedidos/$id/cancelamento") { auth(token) } }
+    suspend fun cancelar(token: String, id: Int, motivo: String?): Resp<Pedido> = chamar { http.post("$base/api/pedidos/$id/cancelar") { auth(token); json(CancelamentoPedido(motivo)) } }
+    suspend fun viagensAtivas(token: String): Resp<List<ViagemAtiva>> = chamar { http.get("$base/api/viagens-ativas") { auth(token) } }
+    suspend fun chamados(token: String): Resp<List<Chamado>> = chamar { http.get("$base/api/chamados") { auth(token) } }
+    suspend fun abrirChamado(token: String, p: NovoChamado): Resp<Chamado> = chamar { http.post("$base/api/chamados") { auth(token); json(p) } }
+    suspend fun avaliar(token: String, pedidoId: Int, trecho: Int, p: NovaAvaliacao): Resp<Avaliacao> = chamar { http.post("$base/api/pedidos/$pedidoId/trechos/$trecho/avaliacao") { auth(token); json(p) } }
+    suspend fun avaliacoes(token: String, pedidoId: Int): Resp<List<Avaliacao>> = chamar { http.get("$base/api/pedidos/$pedidoId/avaliacoes") { auth(token) } }
+    suspend fun gestorViagens(token: String, data: Data): Resp<List<ViagemDoGestor>> = chamar { http.get("$base/api/gestor/viagens") { auth(token); parameter("data", data.iso()) } }
+    suspend fun registrarOcorrencia(token: String, viagemId: Int, p: OcorrenciaPedido): Resp<OcorrenciaResultado> = chamar { http.post("$base/api/gestor/viagens/$viagemId/ocorrencia") { auth(token); json(p) } }
+    suspend fun gestorChamados(token: String): Resp<List<Chamado>> = chamar { http.get("$base/api/gestor/chamados") { auth(token) } }
+    suspend fun responderChamado(token: String, id: Int, texto: String): Resp<Chamado> = chamar { http.post("$base/api/gestor/chamados/$id/resposta") { auth(token); json(RespostaChamado(texto)) } }
+    suspend fun gestorReclamacoes(token: String): Resp<List<Avaliacao>> = chamar { http.get("$base/api/gestor/reclamacoes") { auth(token) } }
+    suspend fun comprovante(token: String, id: Int): Resp<Comprovante> = chamar { http.get("$base/api/pedidos/$id/comprovante") { auth(token) } }
+    suspend fun linkDoComprovante(token: String, id: Int): Resp<LinkDoComprovante> = chamar { http.post("$base/api/pedidos/$id/comprovante/link") { auth(token) } }
+    /** Endereço completo de um caminho do servidor (o PDF abre no navegador do aparelho). */
+    fun enderecoDe(caminho: String) = base + caminho
+    suspend fun alternativas(token: String, pedidoId: Int, trecho: Int): Resp<List<Alternativa>> = chamar { http.get("$base/api/pedidos/$pedidoId/trechos/$trecho/alternativas") { auth(token) } }
+    suspend fun mapaDaAlternativa(token: String, pedidoId: Int, trecho: Int, viagemId: Int): Resp<MapaDePoltronas> = chamar { http.get("$base/api/pedidos/$pedidoId/trechos/$trecho/alternativas/$viagemId/poltronas") { auth(token) } }
+    suspend fun remarcar(token: String, pedidoId: Int, p: RemarcacaoPedido): Resp<Pedido> = chamar { http.post("$base/api/pedidos/$pedidoId/remarcar") { auth(token); json(p) } }
+    suspend fun avisos(token: String): Resp<List<Notificacao>> = chamar { http.get("$base/api/notificacoes") { auth(token) } }
+    suspend fun marcarAvisosLidos(token: String): Resp<AvisoApi> = chamar { http.post("$base/api/notificacoes/lidas") { auth(token) } }
 }

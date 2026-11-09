@@ -44,7 +44,13 @@ fun App() {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
-                ) { Logo(); Pilula("Dados demonstrativos") }
+                ) {
+                    Logo()
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (e.usuario != null) Sino(e.avisosNaoLidos) { e.abrirAvisos() }
+                        Pilula("Dados demonstrativos")
+                    }
+                }
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
             }
             Column(Modifier.fillMaxWidth().background(c.noteBg)) {
@@ -64,7 +70,7 @@ fun App() {
                         Cartao {
                             T("Servidor indisponível", 22, FontWeight.Bold)
                             T(carga.mensagem, 15, cor = c.muted)
-                            T("Inicie o servidor com ./gradlew :server:run e tente de novo.", 14, cor = c.muted)
+                            T("Inicie o servidor com ./gradlew :server:subirServidor (Docker) e tente de novo.", 14, cor = c.muted)
                             Botao("Tentar de novo", { e.iniciar() }, primario = true)
                         }
                     } else when (e.tela) {
@@ -79,9 +85,27 @@ fun App() {
                         Tela.CADASTRO -> TelaCadastro(e)
                         Tela.TERMOS -> TelaTermos(e)
                         Tela.EMPRESAS -> TelaEmpresas(e)
+                        Tela.GESTAO -> TelaGestao(e)
                         Tela.ESQUECI_SENHA -> TelaEsqueciSenha(e)
                         Tela.REDEFINIR_SENHA -> TelaRedefinirSenha(e)
                         Tela.VERIFICAR_EMAIL -> TelaVerificarEmail(e)
+                        Tela.PAGAMENTOS -> TelaPagamentos(e)
+                        Tela.PASSAGEIROS -> TelaPassageiros(e)
+                        Tela.CARRINHO -> TelaCarrinho(e)
+                        Tela.POLTRONAS -> TelaPoltronas(e)
+                        Tela.PAGAMENTO -> TelaPagamento(e)
+                        Tela.PIX -> TelaPix(e)
+                        Tela.RESULTADO -> TelaResultado(e)
+                        Tela.BILHETES -> TelaBilhetes(e)
+                        Tela.HISTORICO -> TelaHistorico(e)
+                        Tela.COMPRA_DETALHE -> TelaCompraDetalhe(e)
+                        Tela.CANCELAR -> TelaCancelar(e)
+                        Tela.COMPROVANTE -> TelaComprovante(e)
+                        Tela.REMARCAR -> TelaRemarcar(e)
+                        Tela.AVISOS -> TelaAvisos(e)
+                        Tela.EM_ANDAMENTO -> TelaEmAndamento(e)
+                        Tela.AJUDA -> TelaAjuda(e)
+                        Tela.AVALIAR -> TelaAvaliar(e)
                     }
                 }
                 if (e.tela == Tela.RESULTADOS && e.selecionadas.isNotEmpty()) {
@@ -104,9 +128,10 @@ fun App() {
             Column(Modifier.fillMaxWidth().background(c.surface)) {
                 Box(Modifier.fillMaxWidth().height(1.dp).background(c.line))
                 Row(Modifier.fillMaxWidth()) {
-                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL)
+                    val naConta = e.tela in setOf(Tela.CONTA, Tela.ENTRAR, Tela.CADASTRO, Tela.EMPRESAS, Tela.GESTAO, Tela.TERMOS, Tela.ESQUECI_SENHA, Tela.REDEFINIR_SENHA, Tela.VERIFICAR_EMAIL, Tela.PAGAMENTOS, Tela.PASSAGEIROS)
                     val nosSalvos = e.tela == Tela.PLANEJAMENTOS
-                    val naBusca = !naConta && !nosSalvos
+                    val nasViagens = e.tela in setOf(Tela.HISTORICO, Tela.COMPRA_DETALHE, Tela.CANCELAR, Tela.COMPROVANTE, Tela.REMARCAR, Tela.BILHETES, Tela.AVISOS, Tela.EM_ANDAMENTO, Tela.AJUDA, Tela.AVALIAR)
+                    val naBusca = !naConta && !nosSalvos && !nasViagens
                     @Composable
                     fun Aba(rotulo: String, ativa: Boolean, onClick: () -> Unit, icone: @Composable (androidx.compose.ui.graphics.Color) -> Unit) {
                         Column(
@@ -114,10 +139,12 @@ fun App() {
                             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                         ) {
                             icone(if (ativa) c.primary else c.fg)
-                            T(rotulo, 14, FontWeight.SemiBold, if (ativa) c.primary else c.fg)
+                            // 12 e numa linha só: no iPhone a fonte do sistema é mais larga e "Planejamentos" quebrava em duas linhas
+                            T(rotulo, 12, FontWeight.SemiBold, if (ativa) c.primary else c.fg, maxLines = 1, softWrap = false)
                         }
                     }
                     Aba("Buscar", naBusca, { e.ir(Tela.BUSCAR) }) { IconeBuscar(it) }
+                    Aba("Viagens", nasViagens, { e.abrirHistorico() }) { IconeViagens(it) }
                     Aba("Planejamentos", nosSalvos, { e.ir(Tela.PLANEJAMENTOS) }) { IconeSalvos(it) }
                     Aba("Conta", naConta, { e.limparMensagensDeConta(); e.ir(Tela.CONTA) }) { IconeConta(it) }
                 }

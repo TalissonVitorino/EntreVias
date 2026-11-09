@@ -34,5 +34,11 @@ object Limites {
     var recuperacaoGlobal = LimiteDeTaxa(max = 200, janelaSeg = 3600)
     var recuperacaoPorEmail = LimiteDeTaxa(max = 3, janelaSeg = 3600)     // por e-mail alvo: no máximo 3 mensagens por hora
     var verificacaoPorUsuario = LimiteDeTaxa(max = 3, janelaSeg = 3600)
+    // Compra: freia abuso do carrinho e a adivinhação de cupom (por pessoa logada).
+    var pedidoPorUsuario = LimiteDeTaxa(max = 30, janelaSeg = 3600)
+    var cupomPorUsuario = LimiteDeTaxa(max = 10, janelaSeg = 600)
+    var chamadoPorUsuario = LimiteDeTaxa(max = 5, janelaSeg = 3600)
+    var comprovantePorUsuario = LimiteDeTaxa(max = 30, janelaSeg = 3600)
+    var remarcacaoPorUsuario = LimiteDeTaxa(max = 20, janelaSeg = 3600)
     var confiarNoProxy = System.getenv("CONFIAR_NO_PROXY") == "true"
 }

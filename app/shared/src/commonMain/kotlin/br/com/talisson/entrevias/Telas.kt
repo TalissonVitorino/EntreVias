@@ -35,6 +35,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import br.com.talisson.entrevias.domain.Categorias
+import br.com.talisson.entrevias.domain.FaixaHorario
 import br.com.talisson.entrevias.domain.LimiteRoteiros
 import br.com.talisson.entrevias.domain.Ordem
 import br.com.talisson.entrevias.domain.Rota
@@ -73,7 +75,7 @@ fun TelaBuscar(e: Estado) {
             Spacer(Modifier.height(16.dp))
             T("Veja preços, horários e conexões em um só planejamento.", 19, cor = c.muted, lh = 26)
             Spacer(Modifier.height(20.dp))
-            T("•  Sem cadastro. Sem compra real.", 14, cor = c.muted)
+            T("•  Cadastro é opcional. Nenhuma compra é real.", 14, cor = c.muted)
         }
 
         Cartao {
@@ -88,6 +90,11 @@ fun TelaBuscar(e: Estado) {
             }
             Campo("Destino", e.destino?.let { e.cidade(it) } ?: "Escolha a cidade", cidades) { e.destino = it }
             var calAberto by remember { mutableStateOf(false) }
+            var calVoltaAberto by remember { mutableStateOf(false) }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Botao("Só ida", { e.idaEVolta = false }, pequeno = true, ativo = !e.idaEVolta)
+                Botao("Ida e volta", { e.idaEVolta = true }, pequeno = true, ativo = e.idaEVolta)
+            }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 T("Ida", 14, FontWeight.Medium, c.muted)
                 Row(
@@ -96,7 +103,19 @@ fun TelaBuscar(e: Estado) {
                     horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
                 ) { T(e.data.curta(), 17, FontWeight.Medium); T("▾", 14, cor = c.muted) }
             }
-            if (calAberto) CalendarioDialog(e.data, { e.data = it; calAberto = false }, { calAberto = false })
+            if (calAberto) CalendarioDialog(e.data, { e.escolherDataDaIda(it); calAberto = false }, { calAberto = false })
+            if (e.idaEVolta) {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    T("Volta", 14, FontWeight.Medium, c.muted)
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(14.dp)).background(c.field)
+                            .clickable { calVoltaAberto = true }.padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically,
+                    ) { T(e.dataVolta.curta(), 17, FontWeight.Medium); T("▾", 14, cor = c.muted) }
+                    if (!e.voltaValida) T("A volta precisa ser depois da ida.", 14, FontWeight.SemiBold, c.erro)
+                }
+                if (calVoltaAberto) CalendarioDialog(e.dataVolta, { e.dataVolta = it; calVoltaAberto = false }, { calVoltaAberto = false })
+            }
             Campo("Passageiros", passageirosTxt(e.pax), (1..6).map { it.toString() to passageirosTxt(it) }) { e.pax = it.toInt() }
             Botao(if (e.buscando) "Buscando…" else "Buscar opções", { e.buscar() }, Modifier.fillMaxWidth(), primario = e.podeBuscar, grande = true)
             e.erroBusca?.let { T(it, 14, cor = c.erro) }
@@ -181,11 +200,19 @@ fun TelaResultados(e: Estado) {
             Spacer(Modifier.width(12.dp))
             Botao("Editar busca", { e.ir(Tela.BUSCAR) }, pequeno = true)
         }
-        T("Opções completas", 24, FontWeight.Bold, ls = -0.5f)
+        var filtrando by remember { mutableStateOf(false) }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            T("Opções completas", 24, FontWeight.Bold, ls = -0.5f)
+            Botao(if (e.filtro.ativo) "Filtros (${e.filtro.quantosGrupos})" else "Filtros", { filtrando = !filtrando }, pequeno = true, ativo = e.filtro.ativo || filtrando)
+        }
+        if (filtrando) PainelDeFiltros(e, lista.size) { filtrando = false }
         Segmentos(listOf(Ordem.MAIS_BARATA to "Menor preço", Ordem.MAIS_RAPIDA to "Mais rápida", Ordem.MAIS_CONFORTO to "Mais conforto"), e.ordem) { e.ordem = it }
         T("Duração completa inclui as esperas. Preços somam todos os trechos para o grupo.", 14, cor = c.muted)
         T("${lista.size} ${if (lista.size == 1) "opção demonstrativa" else "opções demonstrativas"} · Ida", 14, cor = c.muted)
-        if (lista.isEmpty()) {
+        e.rDataVolta?.let { T("Primeiro escolha a ida. Depois você escolhe a volta de ${it.br()}.", 14, FontWeight.SemiBold, c.primary) }
+        if (lista.isEmpty() && e.filtro.ativo) {
+            CaixaVazia("Nenhuma opção com estes filtros", "Há ${e.resultadoSemFiltro?.size ?: 0} opções sem filtro. Afrouxe um filtro para ver mais.", "Limpar filtros") { e.limparFiltro() }
+        } else if (lista.isEmpty()) {
             CaixaVazia("Sem opções para esta busca", "Nenhuma rota encontrada nessa data. Tente outra data ou outras cidades.", "Editar busca") { e.ir(Tela.BUSCAR) }
         } else lista.forEach { CartaoOpcao(e, it) }
         T(TAXAS, 13, cor = c.muted)
@@ -328,6 +355,7 @@ fun TelaRota(e: Estado) {
                     T(e.terminal(v.destino), 14)
                     if (w < r.params.apertadaMin) T("Conexão apertada: abaixo de ${r.params.apertadaMin} min.", 14, cor = c.erro)
                     T("Chegada e próxima saída no mesmo terminal. Tempo de conexão ilustrativo, não validado com a empresa.", 14, cor = c.muted)
+                    InfraDoTerminal(e, v.destino)
                     val cx = risco.conexoes[i]
                     Spacer(Modifier.height(8.dp))
                     SeloRisco(cx.rotulo, cx.nota)
@@ -341,7 +369,7 @@ fun TelaRota(e: Estado) {
                 }
             }
         }
-        Aviso("Antes de continuar", listOf(SEPARADAS, "Esta experiência não reserva assentos nem emite passagens.",
+        Aviso("Antes de continuar", listOf(SEPARADAS, "A compra aqui é simulada: nenhuma cobrança nem passagem de verdade é emitida.",
             "Terminais e horários são ilustrativos. Nenhum tempo de conexão foi validado com transportadoras."))
         Cartao(raio = 22, pad = 18) {
             T("O que este valor inclui", 20, FontWeight.Bold)
@@ -365,11 +393,13 @@ fun TelaRota(e: Estado) {
             T(COTACAO, 13, cor = c.muted)
             T(TAXAS, 13, cor = c.muted)
         }
+        if (e.rDataVolta != null) SecaoVolta(e, r)
         Cartao {
             T("Guardar este caminho · Total conhecido", 14, cor = c.muted)
             T(centavosParaReais(total), 30, FontWeight.Bold, ls = -1f)
+            Botao("Comprar esta viagem", { e.iniciarCompra(r) }, Modifier.fillMaxWidth(), primario = true, grande = true)
             if (e.salvoAgora) T("✓ Salvo neste aparelho", 15, FontWeight.SemiBold, c.ok)
-            else Botao("Salvar planejamento", { e.salvar(r) }, Modifier.fillMaxWidth(), primario = true, grande = true)
+            else Botao("Salvar planejamento", { e.salvar(r) }, Modifier.fillMaxWidth(), grande = true)
             if (e.limiteAtingido) T(LimiteRoteiros.MENSAGEM_CHEIO, 14, FontWeight.SemiBold, c.erro)
             Botao("Simular esta viagem", { e.simular(r) }, Modifier.fillMaxWidth())
             Botao("Ver planejamentos", { e.ir(Tela.PLANEJAMENTOS) }, Modifier.fillMaxWidth())
@@ -589,5 +619,80 @@ fun TelaPlanejamentos(e: Estado) {
             }
         }
         T("Ficam guardados só neste aparelho (até 10). Se você trocar de aparelho ou limpar os dados do app ou do navegador, eles se perdem.", 13, cor = c.muted)
+    }
+}
+
+
+// ---------------------------------------------------------------- B2 FILTROS (US1)
+@Composable
+private fun PainelDeFiltros(e: Estado, quantos: Int, aoFechar: () -> Unit) {
+    val c = cores()
+    val todas = e.resultadoSemFiltro.orEmpty()
+    val empresas = todas.flatMap { r -> r.viagens.map { it.empresa } }.groupingBy { it }.eachCount().toList().sortedBy { it.first }
+    val categorias = todas.flatMap { r -> r.viagens.map { it.categoria } }.groupingBy { it }.eachCount().toList().sortedBy { Categorias.rank(it.first) }
+    val precos = todas.map { it.totalCentavos }.sorted()
+    // 4 degraus de preço entre o menor e o maior total por pessoa (arredondados a R$ 10)
+    val degraus = if (precos.isEmpty()) emptyList() else (1..4).map { i -> ((precos.first() + (precos.last() - precos.first()) * i / 4) / 1000 * 1000).coerceAtLeast(1000) }.distinct()
+    Cartao {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+            T("Filtros", 20, FontWeight.Bold, ls = -0.4f)
+            if (e.filtro.ativo) Link("Limpar") { e.limparFiltro() }
+        }
+        T("Horário de partida", 14, FontWeight.Medium, c.muted)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FaixaHorario.entries.forEach { f -> Botao(f.rotulo, { e.alternarHorario(f) }, pequeno = true, ativo = f in e.filtro.horarios) } }
+        T("Empresa", 14, FontWeight.Medium, c.muted)
+        empresas.forEach { (n, q) -> Botao("$n ($q)", { e.alternarEmpresa(n) }, Modifier.fillMaxWidth(), pequeno = true, ativo = n in e.filtro.empresas) }
+        T("Tipo de serviço", 14, FontWeight.Medium, c.muted)
+        categorias.forEach { (n, q) -> Botao("$n ($q)", { e.alternarCategoria(n) }, Modifier.fillMaxWidth(), pequeno = true, ativo = n in e.filtro.categorias) }
+        if (degraus.size > 1) {
+            T("Preço por pessoa, até", 14, FontWeight.Medium, c.muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { degraus.forEach { d -> Botao(centavosParaReais(d), { e.definirPrecoMax(d) }, pequeno = true, ativo = e.filtro.precoMaxCentavos == d) } }
+        }
+        if (e.infra.isNotEmpty()) {
+            T("Acessibilidade", 14, FontWeight.Medium, c.muted)
+            Botao("Só terminais acessíveis", { e.alternarAcessiveis() }, Modifier.fillMaxWidth(), pequeno = true, ativo = e.filtro.soTerminaisAcessiveis)
+            T("Terminal acessível: banheiro acessível e rampa ou elevador. Sem informação do terminal, a opção não aparece.", 13, cor = c.muted)
+        }
+        Botao("Ver $quantos ${if (quantos == 1) "resultado" else "resultados"}", aoFechar, Modifier.fillMaxWidth(), primario = true)
+    }
+}
+
+// ---------------------------------------------------------------- B4 CONEXÃO: INFRAESTRUTURA DO TERMINAL (US6)
+@Composable
+private fun InfraDoTerminal(e: Estado, terminal: String) {
+    val c = cores()
+    val i = e.infra[terminal] ?: return
+    Spacer(Modifier.height(8.dp))
+    T("Infraestrutura do terminal de baldeação", 14, FontWeight.SemiBold)
+    listOf("Banheiro acessível" to i.banheiroAcessivel, "Rampa e elevador" to i.rampaElevador, "Lanchonete" to i.lanchonete, "Guarda-volumes" to i.guardaVolumes, "Aberto 24 h" to i.aberto24h)
+        .forEach { (nome, tem) -> T("${if (tem) "✓" else "✕"}  $nome", 14, if (tem) FontWeight.Medium else FontWeight.Normal, if (tem) c.fg else c.muted) }
+    T("Do desembarque ao embarque: cerca de ${i.caminhadaM} m. Dado de demonstração.", 13, cor = c.muted)
+}
+
+
+// ---------------------------------------------------------------- B1 IDA E VOLTA: ESCOLHA DA VOLTA
+@Composable
+private fun SecaoVolta(e: Estado, ida: Rota) {
+    val c = cores()
+    val dv = e.rDataVolta ?: return
+    val opcoes = e.opcoesDeVolta(ida)
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        T("Volta · ${e.cidade(ida.destino)} → ${e.cidade(ida.origem)} · ${dv.br()}", 22, FontWeight.Bold, ls = -0.4f)
+        if (opcoes.isEmpty()) T("Nenhuma volta nessa data sai depois de a ida chegar. Volte e escolha outra data.", 14, FontWeight.SemiBold, c.erro)
+        opcoes.forEach { v ->
+            val marcada = e.voltaEscolhida?.id == v.id
+            Column(
+                Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(if (marcada) c.soft else c.surface).clickable { e.voltaEscolhida = v }.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    T("${hora(v.saidaMin)} → ${hora(v.chegadaMin)}", 18, FontWeight.Bold)
+                    T(centavosParaReais(v.totalCentavos * e.rPax), 18, FontWeight.Bold)
+                }
+                T("${duracao(v.duracaoMin)} · ${v.stops()} · ${v.categoria()}", 14, cor = c.muted)
+                T(if (marcada) "✓ Volta escolhida" else "Toque para escolher esta volta", 13, FontWeight.SemiBold, if (marcada) c.primary else c.muted)
+            }
+        }
+        e.voltaEscolhida?.let { T("Ida ${centavosParaReais(ida.totalCentavos * e.rPax)} + volta ${centavosParaReais(it.totalCentavos * e.rPax)} = ${centavosParaReais((ida.totalCentavos + it.totalCentavos) * e.rPax)}", 15, FontWeight.SemiBold) }
     }
 }

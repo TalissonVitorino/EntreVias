@@ -46,7 +46,7 @@ class MigracaoTest {
 
         assertTrue(setOf("celular", "papel", "aceitou_termos_em", "email_verificado_em").all { it in colunas("usuario") })
         assertTrue(setOf("sigla", "cnpj").all { it in colunas("empresa") })
-        assertTrue(setOf("sessao", "tentativa_login", "codigo_verificacao").all { it in tabelas() })
+        assertTrue(setOf("sessao", "tentativa_login", "codigo_verificacao", "forma_pagamento", "passageiro", "pedido", "reserva_assento", "pagamento", "bilhete", "aviso", "chamado", "avaliacao", "viagem_estado", "terminal_infra", "cupom").all { it in tabelas() })
 
         assertEquals("antigo@teste.com", um("select email from usuario where id = 1"))
         assertEquals("hash-antigo", um("select senha_hash from usuario where id = 1"))

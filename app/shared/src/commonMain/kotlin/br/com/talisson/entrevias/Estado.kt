@@ -2,12 +2,46 @@ package br.com.talisson.entrevias
 
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import br.com.talisson.entrevias.domain.AtrasoFicticio
 import br.com.talisson.entrevias.domain.CadastroPedido
 import br.com.talisson.entrevias.domain.Empresa
 import br.com.talisson.entrevias.domain.EstadoEmail
+import br.com.talisson.entrevias.domain.InfraTerminal
+import br.com.talisson.entrevias.domain.FiltroDeRotas
+import br.com.talisson.entrevias.domain.FaixaHorario
+import br.com.talisson.entrevias.domain.ValidacaoAjuda
+import br.com.talisson.entrevias.domain.NovoChamado
+import br.com.talisson.entrevias.domain.NovaAvaliacao
+import br.com.talisson.entrevias.domain.Alternativa
+import br.com.talisson.entrevias.domain.Chamado
+import br.com.talisson.entrevias.domain.RemarcacaoPedido
+import br.com.talisson.entrevias.domain.Comprovante
+import br.com.talisson.entrevias.domain.Avaliacao
+import br.com.talisson.entrevias.domain.OcorrenciaPedido
+import br.com.talisson.entrevias.domain.ViagemDoGestor
+import br.com.talisson.entrevias.domain.EtapaDoTrecho
+import br.com.talisson.entrevias.domain.ViagemAtiva
+import br.com.talisson.entrevias.domain.StatusPedido
+import br.com.talisson.entrevias.domain.StatusPagamento
+import br.com.talisson.entrevias.domain.RegrasDePreco
+import br.com.talisson.entrevias.domain.Pedido
+import br.com.talisson.entrevias.domain.PagamentoCartaoPedido
+import br.com.talisson.entrevias.domain.Pagamento
+import br.com.talisson.entrevias.domain.Notificacao
+import br.com.talisson.entrevias.domain.NovoPedido
+import br.com.talisson.entrevias.domain.MapaDePoltronas
+import br.com.talisson.entrevias.domain.EscolhaDePoltronas
+import br.com.talisson.entrevias.domain.CancelamentoPrevia
+import br.com.talisson.entrevias.domain.ValidacaoPerfil
+import br.com.talisson.entrevias.domain.TIPO_PIX
+import br.com.talisson.entrevias.domain.TIPO_CARTAO
+import br.com.talisson.entrevias.domain.PassageiroPedido
+import br.com.talisson.entrevias.domain.Passageiro
+import br.com.talisson.entrevias.domain.FormaPagamentoPedido
+import br.com.talisson.entrevias.domain.FormaPagamento
 import br.com.talisson.entrevias.domain.EmpresaPedido
 import br.com.talisson.entrevias.domain.LoginPedido
 import br.com.talisson.entrevias.domain.LimiteRoteiros
@@ -34,7 +68,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
-enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL }
+enum class Tela { BUSCAR, RESULTADOS, COMPARAR, ROTA, SIMULACAO, PLANEJAMENTOS, CONTA, ENTRAR, CADASTRO, EMPRESAS, TERMOS, ESQUECI_SENHA, REDEFINIR_SENHA, VERIFICAR_EMAIL, PAGAMENTOS, PASSAGEIROS,
+    CARRINHO, POLTRONAS, PAGAMENTO, PIX, RESULTADO, BILHETES, HISTORICO, COMPRA_DETALHE, CANCELAR, AVISOS, EM_ANDAMENTO, AJUDA, AVALIAR, GESTAO, COMPROVANTE, REMARCAR }
 
 sealed interface Carga {
     data object Carregando : Carga
@@ -47,6 +82,7 @@ data class Plano(val rota: Rota, val data: Data, val pax: Int)
 const val COTACAO = "Cotação demonstrativa de 01/10/2026 às 10:00"
 const val VENDEDOR = "Vendedor fictício: Bilheteria de demonstração"
 const val SEPARADAS = "Passagens separadas: atrasos podem causar a perda da conexão. Não há proteção de conexão confirmada."
+private const val CHAVE_BILHETES = "bilhetes_v1"
 private const val CHAVE_ROTEIROS = "roteiros"
 const val TAXAS = "Taxas de compra não consultadas. O valor final pode variar fora da demonstração."
 
@@ -68,6 +104,9 @@ class Estado(
     var origem by mutableStateOf<String?>(null)
     var destino by mutableStateOf<String?>(null)
     var data by mutableStateOf(DATA_INICIAL)
+    /** B1: ida e volta. A volta precisa ser em outro dia, depois da ida. */
+    var idaEVolta by mutableStateOf(false)
+    var dataVolta by mutableStateOf(DATA_INICIAL.plusDias(1))
     var pax by mutableStateOf(1)
 
     // resultado exibido (guardado no momento da busca)
@@ -78,8 +117,24 @@ class Estado(
     var rDestino by mutableStateOf("")
     var rData by mutableStateOf(DATA_INICIAL)
     var rPax by mutableStateOf(1)
+    var rDataVolta by mutableStateOf<Data?>(null)
+    var todasVolta by mutableStateOf<List<Rota>>(emptyList())
+    var voltaEscolhida by mutableStateOf<Rota?>(null)
     var ordem by mutableStateOf(Ordem.MAIS_BARATA)
-    val resultado: List<Rota>? get() = todas?.let { MotorDeRotas.ordenar(it, ordem).take(40) }
+    /** B2: filtros dos resultados. Vale só para a busca atual e zera numa busca nova. */
+    var filtro by mutableStateOf(FiltroDeRotas())
+    /** B4: infraestrutura dos terminais. Vazio se o servidor não respondeu (então o filtro de acessibilidade some). */
+    var infra by mutableStateOf<Map<String, InfraTerminal>>(emptyMap())
+    /** Todas as rotas da busca, na ordem escolhida, antes dos filtros (para contar opções e montar os grupos). */
+    val resultadoSemFiltro: List<Rota>? get() = todas?.let { MotorDeRotas.ordenar(it, ordem) }
+    val resultado: List<Rota>? get() = resultadoSemFiltro?.let { filtro.aplicar(it, infra).take(40) }
+
+    fun alternarHorario(f: FaixaHorario) { filtro = filtro.copy(horarios = if (f in filtro.horarios) filtro.horarios - f else filtro.horarios + f) }
+    fun alternarEmpresa(n: String) { filtro = filtro.copy(empresas = if (n in filtro.empresas) filtro.empresas - n else filtro.empresas + n) }
+    fun alternarCategoria(n: String) { filtro = filtro.copy(categorias = if (n in filtro.categorias) filtro.categorias - n else filtro.categorias + n) }
+    fun definirPrecoMax(centavos: Int?) { filtro = filtro.copy(precoMaxCentavos = if (filtro.precoMaxCentavos == centavos) null else centavos) }
+    fun alternarAcessiveis() { filtro = filtro.copy(soTerminaisAcessiveis = !filtro.soTerminaisAcessiveis) }
+    fun limparFiltro() { filtro = FiltroDeRotas() }
 
     var rotaAtual by mutableStateOf<Rota?>(null)
     var salvoAgora by mutableStateOf(false)
@@ -124,7 +179,7 @@ class Estado(
             if (token != null) return
             val t = sessaoSalva.token() ?: return
             when (val r = api.perfil(t)) {
-                is Resp.Ok -> { token = t; usuario = r.valor }
+                is Resp.Ok -> { token = t; usuario = r.valor; carregarAvisos() }   // o selo do sino já vale ao abrir o app
                 is Resp.Falha -> if (r.status == 401) sessaoSalva.apagar()
             }
         } finally { sessaoVerificada = true }
@@ -140,10 +195,14 @@ class Estado(
     var cadAceita by mutableStateOf(false)   // nunca pré-marcado
     var documento by mutableStateOf(Documento.TERMOS)
 
+    /** Mexer no aceite apaga o erro de tela: ele falava justamente do aceite, e não pode ficar vermelho depois de marcado. */
+    fun marcarAceite(v: Boolean) { cadAceita = v; contaErro = null }
+
     fun limparRascunhoDoCadastro() { cadNome = ""; cadEmail = ""; cadCelular = ""; cadSenha = ""; cadAceita = false }
     fun abrirDocumento(d: Documento) { documento = d; ir(Tela.TERMOS) }
 
-    private fun abrirSessao(u: Usuario, t: String) { token = t; sessaoSalva.guardar(t); usuario = u; limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA) }
+    private fun abrirSessao(u: Usuario, t: String) { token = t; sessaoSalva.guardar(t); usuario = u; limparMensagensDeConta(); limparRascunhoDoCadastro(); carregarAvisos()
+        if (compraPendente && compraRota != null) { compraPendente = false; ir(Tela.CARRINHO) } else ir(Tela.CONTA) }
 
     fun cadastrar(p: CadastroPedido) {
         Validacao.cadastro(p)?.let { contaErro = it; return }
@@ -174,7 +233,7 @@ class Estado(
 
     fun sair() {
         val t = token
-        token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
+        token = null; usuario = null; sessaoSalva.apagar(); comprovante = null; comprovanteLink = null; empresas.clear(); gestorViagens.clear(); gestorChamados.clear(); gestorReclamacoes.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); limparMensagensDeConta(); limparRascunhoDoCadastro(); ir(Tela.CONTA)
         if (t != null) escopo.launch { api.sair(t) }
     }
 
@@ -260,7 +319,548 @@ class Estado(
         }
     }
 
-    private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
+    // ---------- A5 formas de pagamento e A6 passageiros ----------
+
+    val formas = mutableStateListOf<FormaPagamento>()
+    val passageiros = mutableStateListOf<Passageiro>()
+    var carteiraCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var carteiraErro by mutableStateOf<String?>(null)
+    var carteiraAviso by mutableStateOf<String?>(null)
+    var carteiraOcupada by mutableStateOf(false)
+
+    fun limparMensagensDaCarteira() { carteiraErro = null; carteiraAviso = null }
+
+    /** Roda uma chamada autenticada da carteira: ocupado, erro genérico, sessão vencida (401) volta ao login. */
+    private fun naCarteira(aviso: String? = null, bloco: suspend (String) -> Resp<*>) {
+        val t = token ?: return
+        if (carteiraOcupada) return
+        escopo.launch {
+            carteiraOcupada = true; limparMensagensDaCarteira()
+            when (val r = bloco(t)) {
+                is Resp.Ok<*> -> carteiraAviso = aviso
+                is Resp.Falha -> { carteiraErro = r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            carteiraOcupada = false
+        }
+    }
+
+    fun carregarCarteira() {
+        val t = token ?: return
+        escopo.launch {
+            carteiraCarga = Carga.Carregando
+            val f = api.formas(t); val p = api.passageiros(t)
+            if (f is Resp.Ok) { formas.clear(); formas.addAll(f.valor) }
+            if (p is Resp.Ok) { passageiros.clear(); passageiros.addAll(p.valor) }
+            carteiraCarga = (f as? Resp.Falha ?: p as? Resp.Falha)?.let { Carga.Erro(it.mensagem) } ?: Carga.Pronto
+            if ((f as? Resp.Falha)?.status == 401 || (p as? Resp.Falha)?.status == 401) sessaoExpirou()
+        }
+    }
+
+    /**
+     * O número do cartão é conferido AQUI (soma de Luhn, validade) e só bandeira, 4 últimos dígitos e validade seguem para o
+     * servidor. O número completo e o CVV nunca saem do aparelho.
+     */
+    fun adicionarCartao(numero: String, validade: String, padrao: Boolean) {
+        if (!ValidacaoPerfil.luhn(numero)) { carteiraErro = "Número de cartão inválido. Confira os dígitos."; return }
+        ValidacaoPerfil.validade(validade)?.let { carteiraErro = it; return }
+        if (ValidacaoPerfil.vencido(validade.trim(), DATA_INICIAL.ano, DATA_INICIAL.mes)) { carteiraErro = "Este cartão está vencido."; return }
+        val d = numero.filter { it in '0'..'9' }
+        val pedido = FormaPagamentoPedido(TIPO_CARTAO, ValidacaoPerfil.bandeiraDe(d), d.takeLast(4), validade.trim(), padrao = padrao)
+        naCarteira("Cartão adicionado.") { t -> api.adicionarForma(t, pedido).also { if (it is Resp.Ok) formas.apply { clear(); addAll((api.formas(t) as? Resp.Ok)?.valor ?: emptyList()) } } }
+    }
+
+    fun adicionarPix(tipo: String, finalDaChave: String, padrao: Boolean) {
+        val pedido = FormaPagamentoPedido(TIPO_PIX, pixTipo = tipo, pixFinal = finalDaChave.trim(), padrao = padrao)
+        ValidacaoPerfil.forma(pedido)?.let { carteiraErro = it; return }
+        naCarteira("Pix adicionado.") { t -> api.adicionarForma(t, pedido).also { if (it is Resp.Ok) formas.apply { clear(); addAll((api.formas(t) as? Resp.Ok)?.valor ?: emptyList()) } } }
+    }
+
+    fun tornarPadrao(f: FormaPagamento) = naCarteira("Forma de pagamento padrão atualizada.") { t -> api.tornarPadrao(t, f.id).also { if (it is Resp.Ok) formas.apply { clear(); addAll(it.valor) } } }
+    fun removerForma(f: FormaPagamento) = naCarteira("Forma de pagamento removida.") { t -> api.removerForma(t, f.id).also { if (it is Resp.Ok) formas.apply { clear(); addAll(it.valor) } } }
+
+    fun salvarPassageiro(id: Int?, p: PassageiroPedido, aoTerminar: (String?) -> Unit) {
+        ValidacaoPerfil.passageiro(p)?.let { aoTerminar(it); return }
+        val t = token ?: return
+        escopo.launch {
+            val r = if (id == null) api.adicionarPassageiro(t, p) else api.editarPassageiro(t, id, p)
+            when (r) {
+                is Resp.Ok -> { (api.passageiros(t) as? Resp.Ok)?.let { passageiros.clear(); passageiros.addAll(it.valor) }; aoTerminar(null) }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun removerPassageiro(p: Passageiro) = naCarteira("Passageiro removido.") { t -> api.removerPassageiro(t, p.id).also { if (it is Resp.Ok) passageiros.apply { clear(); addAll(it.valor) } } }
+
+    // ---------- compra (C1 a C7), histórico e cancelamento (D1 a D3), avisos (D4) ----------
+
+    var compraRota by mutableStateOf<Rota?>(null)
+    /** Quer comprar mas ainda não entrou: depois do login a compra continua de onde parou. */
+    var compraPendente by mutableStateOf(false)
+    val paxSelecionados = mutableStateListOf<Int>()
+    var pedido by mutableStateOf<Pedido?>(null)
+    var compraOcupada by mutableStateOf(false)
+    var compraErro by mutableStateOf<String?>(null)
+    var compraAviso by mutableStateOf<String?>(null)
+    /** `simulado`/`disponivel` do pagamento, como o servidor informa. */
+    var pagamentoModo by mutableStateOf<Map<String, Boolean>?>(null)
+
+    fun limparMensagensDaCompra() { compraErro = null; compraAviso = null }
+
+    private fun naCompra(bloco: suspend (String) -> Unit) {
+        val t = token ?: return
+        if (compraOcupada) return
+        escopo.launch { compraOcupada = true; limparMensagensDaCompra(); try { bloco(t) } finally { compraOcupada = false } }
+    }
+
+    private fun falhouNaCompra(r: Resp.Falha) {
+        compraErro = if (r.status == 429) "Muitas tentativas. Tente de novo mais tarde." else r.mensagem
+        if (r.status == 401) sessaoExpirou()
+    }
+
+    fun carregarModoDePagamento() { escopo.launch { (api.estadoPagamento() as? Resp.Ok)?.let { pagamentoModo = it.valor } } }
+
+    /** "Comprar" na tela da rota. Sem login, leva ao login e a compra volta sozinha depois. */
+    fun iniciarCompra(r: Rota) {
+        compraRota = r; pedido = null; paxSelecionados.clear(); escolhas.clear(); pagamento = null; limparMensagensDaCompra()
+        if (usuario == null) { compraPendente = true; limparMensagensDeConta(); contaAviso = "Entre na sua conta para comprar."; ir(Tela.ENTRAR); return }
+        ir(Tela.CARRINHO)
+    }
+
+    fun alternarPassageiro(id: Int) {
+        if (id in paxSelecionados) paxSelecionados.remove(id) else if (paxSelecionados.size < RegrasDePreco.MAX_PASSAGEIROS) paxSelecionados.add(id)
+        pedido = null   // o total muda com quem viaja: calcula de novo
+        escolhas.clear(); limparMensagensDaCompra()
+    }
+
+    /** Pede ao servidor o total (ele consulta o preço no banco). */
+    fun calcularPedido() {
+        val r = compraRota ?: return
+        if (paxSelecionados.isEmpty()) { compraErro = "Escolha quem vai viajar."; return }
+        if (rDataVolta != null && voltaEscolhida == null) { compraErro = "Escolha a volta antes de ver o total."; return }
+        naCompra { t ->
+            when (val x = api.criarPedido(t, NovoPedido(r.viagens.map { it.id }, paxSelecionados.toList(), viagemIdsVolta = voltaEscolhida?.viagens?.map { it.id }.orEmpty()))) {
+                is Resp.Ok -> pedido = x.valor
+                is Resp.Falha -> falhouNaCompra(x)
+            }
+        }
+    }
+
+    fun aplicarCupom(codigo: String) {
+        val p = pedido ?: return
+        if (codigo.isBlank()) { compraErro = "Digite o código do cupom."; return }
+        naCompra { t -> when (val x = api.cupom(t, p.id, codigo.trim())) { is Resp.Ok -> { pedido = x.valor; compraAviso = "Cupom aplicado." }; is Resp.Falha -> falhouNaCompra(x) } }
+    }
+
+    fun removerCupom() { val p = pedido ?: return; naCompra { t -> when (val x = api.cupom(t, p.id, null)) { is Resp.Ok -> pedido = x.valor; is Resp.Falha -> falhouNaCompra(x) } } }
+
+    // C2: poltronas. As escolhas ficam aqui até o último trecho; só então vão ao servidor, de uma vez.
+    val escolhas = mutableStateMapOf<Int, List<Int>>()
+    var trechoDePoltronas by mutableStateOf(0)
+    var mapa by mutableStateOf<MapaDePoltronas?>(null)
+
+    val poltronasPorTrecho get() = pedido?.let { RegrasDePreco.poltronasNecessarias(it.passageiros.map { p -> p.categoria }) } ?: 0
+    val temAcessibilidade get() = pedido?.passageiros?.any { it.categoria != br.com.talisson.entrevias.domain.CategoriaPassageiro.COLO && !it.acessibilidade.isNullOrBlank() } == true
+
+    fun abrirPoltronas() { trechoDePoltronas = 0; escolhas.clear(); mapa = null; limparMensagensDaCompra(); ir(Tela.POLTRONAS); carregarMapa() }
+
+    fun carregarMapa() {
+        val p = pedido ?: return; val v = p.trechos.getOrNull(trechoDePoltronas)?.viagemId ?: return
+        val t = token ?: return
+        escopo.launch { when (val x = api.mapa(t, p.id, v)) { is Resp.Ok -> mapa = x.valor; is Resp.Falha -> falhouNaCompra(x) } }
+    }
+
+    fun alternarPoltrona(n: Int) {
+        val v = pedido?.trechos?.getOrNull(trechoDePoltronas)?.viagemId ?: return
+        val atual = escolhas[v].orEmpty()
+        escolhas[v] = if (n in atual) atual - n else if (atual.size < poltronasPorTrecho) atual + n else atual
+        limparMensagensDaCompra()
+    }
+
+    fun voltarTrecho() { if (trechoDePoltronas > 0) { trechoDePoltronas--; mapa = null; limparMensagensDaCompra(); carregarMapa() } }
+
+    /** Avança ao próximo trecho; no último, reserva tudo no servidor (15 min) e segue para o pagamento. */
+    fun avancarPoltronas() {
+        val p = pedido ?: return
+        val v = p.trechos[trechoDePoltronas].viagemId
+        if (escolhas[v].orEmpty().size != poltronasPorTrecho) { compraErro = "Escolha ${poltronasPorTrecho} ${if (poltronasPorTrecho == 1) "poltrona" else "poltronas"} neste trecho."; return }
+        if (trechoDePoltronas < p.trechos.size - 1) { trechoDePoltronas++; mapa = null; limparMensagensDaCompra(); carregarMapa(); return }
+        naCompra { t ->
+            when (val x = api.escolherPoltronas(t, p.id, p.trechos.map { EscolhaDePoltronas(it.viagemId, escolhas[it.viagemId].orEmpty()) })) {
+                is Resp.Ok -> { pedido = x.valor; ir(Tela.PAGAMENTO) }
+                is Resp.Falha -> { falhouNaCompra(x); if (x.status == 409) { escolhas.clear(); trechoDePoltronas = 0; mapa = null; carregarMapa() } }
+            }
+        }
+    }
+
+    // C3 a C6: pagamento (SIMULADO)
+    var pagamento by mutableStateOf<Pagamento?>(null)
+
+    fun pagarComPix() {
+        val p = pedido ?: return
+        naCompra { t -> when (val x = api.pagarPix(t, p.id)) { is Resp.Ok -> { pagamento = x.valor; ir(Tela.PIX) }; is Resp.Falha -> falhouNaCompra(x) } }
+    }
+
+    /** Só bandeira, 4 últimos dígitos e parcelas vão ao servidor. O número e o CVV ficam na tela e somem com ela. */
+    fun pagarComCartao(ultimos4: String, bandeira: String, parcelas: Int, salvarNoPerfil: Boolean, validade: String) {
+        val p = pedido ?: return
+        naCompra { t ->
+            when (val x = api.pagarCartao(t, p.id, PagamentoCartaoPedido(ultimos4, bandeira, parcelas))) {
+                is Resp.Ok -> {
+                    pagamento = x.valor
+                    if (x.valor.status == StatusPagamento.APROVADO) {
+                        (api.pedido(t, p.id) as? Resp.Ok)?.let { pedido = it.valor }
+                        if (salvarNoPerfil) api.adicionarForma(t, FormaPagamentoPedido(TIPO_CARTAO, bandeira, ultimos4, validade))
+                    }
+                    ir(Tela.RESULTADO)
+                }
+                is Resp.Falha -> falhouNaCompra(x)
+            }
+        }
+    }
+
+    /** Pergunta ao servidor como está o Pix; aprovado leva ao resultado, vencido avisa. */
+    fun consultarPagamento() {
+        val g = pagamento ?: return; val t = token ?: return
+        escopo.launch {
+            val x = api.pagamento(t, g.id)
+            if (x is Resp.Ok) {
+                pagamento = x.valor
+                if (x.valor.status == StatusPagamento.APROVADO) { (api.pedido(t, x.valor.pedidoId) as? Resp.Ok)?.let { pedido = it.valor }; ir(Tela.RESULTADO) }
+            } else if (x is Resp.Falha && x.status == 401) sessaoExpirou()
+        }
+    }
+
+    /** SIMULADO: aprova o Pix no lugar do banco. Só aparece quando o servidor diz que o pagamento é simulado. */
+    fun simularPix() {
+        val g = pagamento ?: return
+        naCompra { t ->
+            when (val x = api.simularPix(t, g.id)) {
+                is Resp.Ok -> { pagamento = x.valor; (api.pedido(t, x.valor.pedidoId) as? Resp.Ok)?.let { pedido = it.valor }; ir(Tela.RESULTADO) }
+                is Resp.Falha -> falhouNaCompra(x)
+            }
+        }
+    }
+
+    // C7, D1, D2: bilhetes, histórico e detalhe
+    val historico = mutableStateListOf<Pedido>()
+    var filtroHistorico by mutableStateOf<String?>(null)
+    var historicoCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var pedidoAberto by mutableStateOf<Pedido?>(null)
+
+    fun abrirHistorico() { limparMensagensDaCompra(); ir(Tela.HISTORICO); carregarHistorico(); carregarAtivas() }
+
+    fun carregarHistorico(filtro: String? = filtroHistorico) {
+        val t = token ?: return
+        filtroHistorico = filtro
+        escopo.launch {
+            historicoCarga = Carga.Carregando
+            when (val x = api.pedidos(t, filtro)) {
+                is Resp.Ok -> { historico.clear(); historico.addAll(x.valor); historicoCarga = Carga.Pronto }
+                is Resp.Falha -> { historicoCarga = Carga.Erro(x.mensagem); if (x.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun abrirDetalhe(p: Pedido) { pedidoAberto = p; limparMensagensDaCompra(); ir(Tela.COMPRA_DETALHE) }
+    fun abrirBilhetes(p: Pedido) { pedidoAberto = p; ir(Tela.BILHETES) }
+
+    // ---------- remarcação: troca um trecho de uma compra paga (uma vez, até 2 h antes, sem taxa, preço igual ou menor) ----------
+    var remarcarTrecho by mutableStateOf<Int?>(null)
+    val alternativas = mutableStateListOf<Alternativa>()
+    var alternativasCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var alternativaEscolhida by mutableStateOf<Alternativa?>(null)
+    var remarcarMapa by mutableStateOf<MapaDePoltronas?>(null)
+    var remarcarPoltronas by mutableStateOf<List<Int>>(emptyList())
+
+    /** Trechos que ainda dá para trocar: não cancelados e com a saída a 2 h ou mais (pelo relógio do servidor). */
+    fun trechosRemarcaveis(p: Pedido) = p.trechos.filter { !it.cancelada && it.saidaReal - p.agora >= RegrasDePreco.REMARCACAO_ANTECEDENCIA_SEG }
+    fun podeRemarcar(p: Pedido) = p.status == StatusPedido.PAGO && p.remarcadaEm == null && trechosRemarcaveis(p).isNotEmpty()
+    val poltronasDaRemarcacao get() = pedidoAberto?.let { RegrasDePreco.poltronasNecessarias(it.passageiros.map { q -> q.categoria }) } ?: 0
+    val remarcacaoComAcessibilidade get() = pedidoAberto?.passageiros?.any { it.categoria != br.com.talisson.entrevias.domain.CategoriaPassageiro.COLO && !it.acessibilidade.isNullOrBlank() } == true
+
+    fun abrirRemarcacao(p: Pedido) {
+        pedidoAberto = p; limparMensagensDaCompra()
+        val primeiro = trechosRemarcaveis(p).firstOrNull()?.ordem
+        alternativas.clear(); alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList(); remarcarTrecho = primeiro
+        ir(Tela.REMARCAR)
+        if (primeiro != null) carregarAlternativas()
+    }
+
+    fun escolherTrechoDaRemarcacao(ordem: Int) {
+        remarcarTrecho = ordem; alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList(); limparMensagensDaCompra(); carregarAlternativas()
+    }
+
+    private fun carregarAlternativas() {
+        val t = token ?: return; val p = pedidoAberto ?: return; val ordem = remarcarTrecho ?: return
+        escopo.launch {
+            alternativasCarga = Carga.Carregando; alternativas.clear()
+            when (val r = api.alternativas(t, p.id, ordem)) {
+                is Resp.Ok -> { alternativas.addAll(r.valor); alternativasCarga = Carga.Pronto }
+                is Resp.Falha -> { alternativasCarga = Carga.Erro(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun escolherAlternativa(a: Alternativa) {
+        alternativaEscolhida = a; remarcarMapa = null; remarcarPoltronas = emptyList(); limparMensagensDaCompra(); carregarMapaDaRemarcacao()
+    }
+
+    fun carregarMapaDaRemarcacao() {
+        val t = token ?: return; val p = pedidoAberto ?: return; val ordem = remarcarTrecho ?: return; val a = alternativaEscolhida ?: return
+        escopo.launch { when (val r = api.mapaDaAlternativa(t, p.id, ordem, a.viagemId)) { is Resp.Ok -> remarcarMapa = r.valor; is Resp.Falha -> falhouNaCompra(r) } }
+    }
+
+    fun alternarPoltronaDaRemarcacao(n: Int) {
+        val atual = remarcarPoltronas
+        remarcarPoltronas = if (n in atual) atual - n else if (atual.size < poltronasDaRemarcacao) atual + n else atual
+        limparMensagensDaCompra()
+    }
+
+    fun voltarDasAlternativas() { alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList(); limparMensagensDaCompra() }
+
+    fun confirmarRemarcacao() {
+        val p = pedidoAberto ?: return; val ordem = remarcarTrecho ?: return; val a = alternativaEscolhida ?: return
+        if (remarcarPoltronas.size != poltronasDaRemarcacao) { compraErro = "Escolha $poltronasDaRemarcacao ${if (poltronasDaRemarcacao == 1) "poltrona" else "poltronas"}."; return }
+        naCompra { t ->
+            when (val r = api.remarcar(t, p.id, RemarcacaoPedido(ordem, a.viagemId, remarcarPoltronas))) {
+                is Resp.Ok -> {
+                    pedidoAberto = r.valor
+                    // o bilhete guardado no aparelho é o antigo: troca pelo novo (os códigos mudaram)
+                    if (estaGuardado(p)) guardarBilhetes(r.valor)
+                    carregarHistorico(); carregarAvisos()
+                    compraAviso = "Viagem remarcada. Seus bilhetes foram refeitos: use os novos."
+                    alternativaEscolhida = null; remarcarMapa = null; remarcarPoltronas = emptyList()
+                    ir(Tela.COMPRA_DETALHE)
+                }
+                is Resp.Falha -> { falhouNaCompra(r); if (r.status == 409) { remarcarPoltronas = emptyList(); remarcarMapa = null; carregarMapaDaRemarcacao() } }
+            }
+        }
+    }
+
+
+    // ---------- comprovante: a tela e o texto vêm do servidor; o PDF abre no navegador por um link temporário ----------
+    var comprovante by mutableStateOf<Comprovante?>(null)
+    var comprovanteCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var comprovanteErro by mutableStateOf<String?>(null)
+    /** Endereço do PDF já pronto; a tela abre e zera (`consumirLinkDoComprovante`). */
+    var comprovanteLink by mutableStateOf<String?>(null)
+    var comprovanteOcupado by mutableStateOf(false)
+
+    fun abrirComprovante(p: Pedido) {
+        val t = token ?: return
+        pedidoAberto = p; comprovante = null; comprovanteErro = null; comprovanteLink = null; comprovanteCarga = Carga.Carregando
+        ir(Tela.COMPROVANTE)
+        escopo.launch {
+            when (val r = api.comprovante(t, p.id)) {
+                is Resp.Ok -> { comprovante = r.valor; comprovanteCarga = Carga.Pronto }
+                is Resp.Falha -> { comprovanteCarga = Carga.Erro(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun pedirPdfDoComprovante() {
+        val t = token ?: return; val p = pedidoAberto ?: return
+        if (comprovanteOcupado) return
+        escopo.launch {
+            comprovanteOcupado = true; comprovanteErro = null
+            when (val r = api.linkDoComprovante(t, p.id)) {
+                is Resp.Ok -> comprovanteLink = api.enderecoDe(r.valor.caminho)
+                is Resp.Falha -> { comprovanteErro = if (r.status == 429) "Muitos pedidos seguidos. Tente de novo mais tarde." else r.mensagem; if (r.status == 401) sessaoExpirou() }
+            }
+            comprovanteOcupado = false
+        }
+    }
+
+    fun consumirLinkDoComprovante(): String? = comprovanteLink.also { comprovanteLink = null }
+
+    // Bilhetes guardados no aparelho (RQ49): ficam no mesmo armazenamento protegido do token.
+    private fun lerBilhetesGuardados(): List<Pedido> =
+        runCatching { armazenamento.ler(CHAVE_BILHETES)?.let { kotlinx.serialization.json.Json { ignoreUnknownKeys = true }.decodeFromString<List<Pedido>>(it) } }.getOrNull().orEmpty()
+    val bilhetesGuardados = mutableStateListOf<Pedido>().apply { addAll(lerBilhetesGuardados()) }
+    fun estaGuardado(p: Pedido) = bilhetesGuardados.any { it.id == p.id }
+    fun guardarBilhetes(p: Pedido) {
+        bilhetesGuardados.removeAll { it.id == p.id }; bilhetesGuardados.add(p)
+        runCatching { armazenamento.gravar(CHAVE_BILHETES, kotlinx.serialization.json.Json.encodeToString(bilhetesGuardados.toList())) }
+    }
+    private fun persistirBilhetesGuardados() { runCatching { armazenamento.gravar(CHAVE_BILHETES, kotlinx.serialization.json.Json.encodeToString(bilhetesGuardados.toList())) } }
+    fun apagarBilhetesGuardados() { bilhetesGuardados.clear(); runCatching { armazenamento.gravar(CHAVE_BILHETES, null) } }
+
+    // D5: viagem em andamento. Sem internet, usa os bilhetes guardados no aparelho e o relógio do aparelho.
+    val ativas = mutableStateListOf<ViagemAtiva>()
+    var ativasOffline by mutableStateOf(false)
+
+    fun carregarAtivas() {
+        val t = token ?: return
+        escopo.launch {
+            when (val x = api.viagensAtivas(t)) {
+                is Resp.Ok -> { ativasOffline = false; ativas.clear(); ativas.addAll(x.valor) }
+                is Resp.Falha -> {
+                    if (x.status == 401) { sessaoExpirou(); return@launch }
+                    if (x.status == 0) {
+                        val agora = kotlin.time.Clock.System.now().epochSeconds
+                        val locais = bilhetesGuardados.filter { p -> p.status == StatusPedido.PAGO && p.trechos.maxOf { it.chegadaReal } > agora }.sortedBy { it.saidaEm }
+                        ativasOffline = true; ativas.clear(); ativas.addAll(locais.map { ViagemAtiva(it, EtapaDoTrecho.de(it, agora), agora) })
+                    }
+                }
+            }
+        }
+    }
+
+    fun abrirEmAndamento() { ir(Tela.EM_ANDAMENTO); carregarAtivas() }
+
+    // F1: ajuda e F2: avaliação
+    val chamados = mutableStateListOf<Chamado>()
+    var ajudaPedido by mutableStateOf<Pedido?>(null)
+    var ajudaTrecho by mutableStateOf<Int?>(null)
+    var chamadoNovo by mutableStateOf<Chamado?>(null)
+    var ajudaErro by mutableStateOf<String?>(null)
+    var ajudaOcupada by mutableStateOf(false)
+
+    fun abrirAjuda(p: Pedido? = null) {
+        ajudaPedido = p; ajudaTrecho = null; chamadoNovo = null; ajudaErro = null; ir(Tela.AJUDA); carregarChamados()
+        if (historico.isEmpty()) carregarHistorico(null)
+    }
+
+    // ---------- gestão (D4, F1, F2): só para o papel de gestor ----------
+    val gestorViagens = mutableStateListOf<ViagemDoGestor>()
+    val gestorChamados = mutableStateListOf<Chamado>()
+    val gestorReclamacoes = mutableStateListOf<Avaliacao>()
+    var gestorData by mutableStateOf(DATA_INICIAL)
+    var gestorCarga by mutableStateOf<Carga>(Carga.Pronto)
+    var gestorAviso by mutableStateOf<String?>(null)
+
+    fun carregarGestao() {
+        val t = token ?: return
+        if (usuario?.ehGestor != true) return
+        val dia = gestorData
+        escopo.launch {
+            gestorCarga = Carga.Carregando
+            val v = api.gestorViagens(t, dia); val c = api.gestorChamados(t); val r = api.gestorReclamacoes(t)
+            val falha = listOf(v, c, r).filterIsInstance<Resp.Falha>().firstOrNull()
+            if (falha != null) { gestorCarga = Carga.Erro(falha.mensagem); if (falha.status == 401) sessaoExpirou(); return@launch }
+            if (v is Resp.Ok) { gestorViagens.clear(); gestorViagens.addAll(v.valor) }
+            if (c is Resp.Ok) { gestorChamados.clear(); gestorChamados.addAll(c.valor) }
+            if (r is Resp.Ok) { gestorReclamacoes.clear(); gestorReclamacoes.addAll(r.valor) }
+            gestorCarga = Carga.Pronto
+        }
+    }
+
+    fun mudarDiaDaGestao(delta: Int) { gestorData = gestorData.plusDias(delta); gestorAviso = null; carregarGestao() }
+
+    /** Registra atraso, mudança de horário ou cancelamento; [aoTerminar] recebe o erro (`null` = deu certo). */
+    fun registrarOcorrencia(viagemId: Int, tipo: String, minutos: Int, aoTerminar: (String?) -> Unit) {
+        val t = token ?: return
+        escopo.launch {
+            when (val r = api.registrarOcorrencia(t, viagemId, OcorrenciaPedido(tipo, minutos))) {
+                is Resp.Ok -> {
+                    val n = r.valor.pedidosAfetados
+                    gestorAviso = if (n == 0) "Registrado. Ninguém tinha compra paga nesta viagem." else "Registrado. $n ${if (n == 1) "compra avisada" else "compras avisadas"}."
+                    aoTerminar(null); carregarGestao()
+                }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun responderChamado(id: Int, texto: String, aoTerminar: (String?) -> Unit) {
+        val t = token ?: return
+        if (texto.trim().length !in 2..1000) { aoTerminar("A resposta precisa ter de 2 a 1000 caracteres."); return }
+        escopo.launch {
+            when (val r = api.responderChamado(t, id, texto.trim())) {
+                is Resp.Ok -> { val i = gestorChamados.indexOfFirst { it.id == id }; if (i >= 0) gestorChamados[i] = r.valor; aoTerminar(null) }
+                is Resp.Falha -> { aoTerminar(r.mensagem); if (r.status == 401) sessaoExpirou() }
+            }
+        }
+    }
+
+    fun carregarChamados() {
+        val t = token ?: return
+        escopo.launch { (api.chamados(t) as? Resp.Ok)?.let { chamados.clear(); chamados.addAll(it.valor) } }
+    }
+
+    fun enviarChamado(assunto: String, mensagem: String) {
+        val t = token ?: return
+        val pedido = NovoChamado(ajudaPedido?.id, ajudaTrecho.takeIf { ajudaPedido != null }, assunto, mensagem.ifBlank { null })
+        ValidacaoAjuda.chamado(pedido)?.let { ajudaErro = it; return }
+        if (ajudaOcupada) return
+        escopo.launch {
+            ajudaOcupada = true; ajudaErro = null
+            when (val x = api.abrirChamado(t, pedido)) {
+                is Resp.Ok -> { chamadoNovo = x.valor; carregarChamados() }
+                is Resp.Falha -> { ajudaErro = if (x.status == 429) "Muitos pedidos de ajuda seguidos. Tente de novo mais tarde." else x.mensagem; if (x.status == 401) sessaoExpirou() }
+            }
+            ajudaOcupada = false
+        }
+    }
+
+    val avaliacoes = mutableStateListOf<Avaliacao>()
+    var avaliarTrecho by mutableStateOf(1)
+    var avaliacaoEnviada by mutableStateOf<Avaliacao?>(null)
+    var avaliacaoErro by mutableStateOf<String?>(null)
+    var avaliacaoOcupada by mutableStateOf(false)
+
+    fun abrirAvaliacao(p: Pedido, trecho: Int) {
+        pedidoAberto = p; avaliarTrecho = trecho; avaliacaoEnviada = null; avaliacaoErro = null; avaliacoes.clear(); ir(Tela.AVALIAR)
+        val t = token ?: return
+        escopo.launch { (api.avaliacoes(t, p.id) as? Resp.Ok)?.let { avaliacoes.clear(); avaliacoes.addAll(it.valor); avaliacaoEnviada = it.valor.firstOrNull { a -> a.trecho == trecho } } }
+    }
+
+    fun enviarAvaliacao(a: NovaAvaliacao) {
+        val t = token ?: return; val p = pedidoAberto ?: return
+        ValidacaoAjuda.avaliacao(a)?.let { avaliacaoErro = it; return }
+        if (avaliacaoOcupada) return
+        escopo.launch {
+            avaliacaoOcupada = true; avaliacaoErro = null
+            when (val x = api.avaliar(t, p.id, avaliarTrecho, a)) {
+                is Resp.Ok -> avaliacaoEnviada = x.valor
+                is Resp.Falha -> { avaliacaoErro = x.mensagem; if (x.status == 401) sessaoExpirou() }
+            }
+            avaliacaoOcupada = false
+        }
+    }
+
+    // D3: cancelamento
+    var previa by mutableStateOf<CancelamentoPrevia?>(null)
+
+    fun abrirCancelamento(p: Pedido) {
+        pedidoAberto = p; previa = null; limparMensagensDaCompra(); ir(Tela.CANCELAR)
+        val t = token ?: return
+        escopo.launch { when (val x = api.previaCancelamento(t, p.id)) { is Resp.Ok -> previa = x.valor; is Resp.Falha -> { compraErro = x.mensagem; if (x.status == 401) sessaoExpirou() } } }
+    }
+
+    fun confirmarCancelamento(motivo: String?) {
+        val p = pedidoAberto ?: return
+        naCompra { t ->
+            when (val x = api.cancelar(t, p.id, motivo)) {
+                is Resp.Ok -> { pedidoAberto = x.valor; bilhetesGuardados.removeAll { it.id == p.id }; persistirBilhetesGuardados(); carregarHistorico(); compraAviso = "Compra cancelada. O reembolso sai em até 72 horas."; ir(Tela.COMPRA_DETALHE) }
+                is Resp.Falha -> falhouNaCompra(x)
+            }
+        }
+    }
+
+    // D4: avisos
+    val avisos = mutableStateListOf<Notificacao>()
+    val avisosNaoLidos get() = avisos.count { !it.lida }
+
+    fun carregarAvisos() {
+        val t = token ?: return
+        escopo.launch { (api.avisos(t) as? Resp.Ok)?.let { avisos.clear(); avisos.addAll(it.valor) } }
+    }
+
+    fun abrirAvisos() { ir(Tela.AVISOS); carregarAvisos() }
+    fun marcarAvisosLidos() {
+        val t = token ?: return
+        escopo.launch { if (api.marcarAvisosLidos(t) is Resp.Ok) { val l = avisos.map { it.copy(lida = true) }; avisos.clear(); avisos.addAll(l) } }
+    }
+
+    /** Nada de uma pessoa sobra para a próxima no mesmo aparelho: carrinho, histórico, avisos e bilhetes guardados. */
+    private fun limparDadosDaCompra() {
+        pedido = null; pagamento = null; compraRota = null; compraPendente = false; paxSelecionados.clear(); escolhas.clear(); mapa = null
+        historico.clear(); pedidoAberto = null; previa = null; avisos.clear(); ativas.clear(); chamados.clear(); avaliacoes.clear(); ajudaPedido = null; chamadoNovo = null; avaliacaoEnviada = null; apagarBilhetesGuardados()
+    }
+
+    private fun sessaoExpirou() { token = null; usuario = null; sessaoSalva.apagar(); empresas.clear(); formas.clear(); passageiros.clear(); limparDadosDaCompra(); ir(Tela.ENTRAR); contaErro = "Sua sessão acabou. Entre de novo." }
 
     fun carregarEmpresas() {
         val t = token ?: return
@@ -311,6 +911,8 @@ class Estado(
                 paramsRisco = try { api.parametrosRisco() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosRisco() }
                 // servidor sem o endpoint do plano B (versão antiga): valem as regras iniciais do plano
                 paramsPlanoB = try { api.parametrosPlanoB() } catch (e: CancellationException) { throw e } catch (_: Exception) { ParametrosPlanoB() }
+                // infraestrutura dos terminais é um extra: se faltar, só o filtro de acessibilidade e o bloco do terminal somem
+                infra = try { api.infraTerminais().associateBy { it.terminal } } catch (e: CancellationException) { throw e } catch (_: Exception) { emptyMap() }
                 Carga.Pronto
             } catch (t: Throwable) {
                 Carga.Erro("Não foi possível falar com o servidor (${urlBase()}).")
@@ -325,7 +927,11 @@ class Estado(
     /** RF19: nota de risco da rota e de cada conexão (atraso típico fictício, rotulado "simulado"). */
     fun risco(r: Rota): RiscoRota = RiscoConexao.avaliar(r, paramsRisco, AtrasoFicticio) { cidade(it) }
 
-    val podeBuscar get() = origem != null && destino != null && origem != destino
+    val voltaValida get() = !idaEVolta || dataVolta > data
+
+    /** Escolher a data da ida: se a volta ficou antes (ou no mesmo dia), ela vai para o dia seguinte, em vez de a busca travar. */
+    fun escolherDataDaIda(d: Data) { data = d; if (dataVolta <= d) dataVolta = d.plusDias(1) }
+    val podeBuscar get() = origem != null && destino != null && origem != destino && voltaValida
 
     fun buscar() {
         val o = origem ?: return
@@ -336,7 +942,10 @@ class Estado(
             try {
                 val v = api.viagens(data, 3)
                 val rotas = MotorDeRotas.buscar(o, d, v, params, limite = 200, partida = 0 until 1440)
-                todas = rotas; rOrigem = o; rDestino = d; rData = data; rPax = pax
+                // B1: com ida e volta, busca também o sentido contrário na data da volta
+                val voltas = if (idaEVolta) MotorDeRotas.buscar(d, o, api.viagens(dataVolta, 3), params, limite = 200, partida = 0 until 1440) else emptyList()
+                todas = rotas; rOrigem = o; rDestino = d; rData = data; rPax = pax; filtro = FiltroDeRotas()
+                rDataVolta = dataVolta.takeIf { idaEVolta }; todasVolta = voltas; voltaEscolhida = null
                 base = v; baseData = data; baseCarga = Carga.Pronto
                 selecionadas.clear()
                 ir(Tela.RESULTADOS)
@@ -354,7 +963,15 @@ class Estado(
     }
 
     fun ir(t: Tela) { tela = t; salvoAgora = false; limiteAtingido = false }
-    fun abrirRota(r: Rota, de: Tela = Tela.RESULTADOS) { rotaAtual = r; voltarPara = de; ir(Tela.ROTA) }
+    fun abrirRota(r: Rota, de: Tela = Tela.RESULTADOS) { rotaAtual = r; voltarPara = de; voltaEscolhida = null; ir(Tela.ROTA) }
+
+    /** B1: voltas que saem DEPOIS de a ida chegar (mais a conexão mínima), contando os dias entre as duas datas. */
+    fun opcoesDeVolta(ida: Rota): List<Rota> {
+        val dv = rDataVolta ?: return emptyList()
+        val chegadaIdaAbs = ida.chegadaMin
+        val offsetVolta = Tempo.diasEntre(rData, dv) * 1440
+        return MotorDeRotas.ordenar(todasVolta, ordem).filter { offsetVolta + it.saidaMin >= chegadaIdaAbs + params.minimaMin }.take(8)
+    }
     fun abrirPlano(p: Plano) { rData = p.data; rPax = p.pax; garantirBase(p.data); abrirRota(p.rota, Tela.PLANEJAMENTOS) }
 
     /** O plano B precisa das viagens do dia da rota; ao abrir um planejamento salvo de outro dia, busca de novo. */

@@ -73,8 +73,18 @@ object Banco {
             it.execute("create unique index if not exists empresa_cnpj on empresa(cnpj) where cnpj is not null")
             it.execute("create table if not exists sessao (token_hash TEXT PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, criada_em INTEGER NOT NULL, expira_em INTEGER NOT NULL)")
             it.execute("create table if not exists codigo_verificacao (usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, finalidade TEXT NOT NULL CHECK (finalidade IN ('email','senha')), codigo_hash TEXT NOT NULL, expira_em INTEGER NOT NULL, tentativas INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (usuario_id, finalidade))")
+            it.execute("create table if not exists forma_pagamento (id INTEGER PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, tipo TEXT NOT NULL CHECK (tipo IN ('cartao','pix')), rotulo TEXT NOT NULL, bandeira TEXT, ultimos4 TEXT, validade TEXT, padrao INTEGER NOT NULL DEFAULT 0 CHECK (padrao IN (0,1)), criado_em INTEGER NOT NULL)")
+            it.execute("create index if not exists idx_forma_usuario on forma_pagamento(usuario_id)")
+            it.execute("create table if not exists passageiro (id INTEGER PRIMARY KEY, usuario_id INTEGER NOT NULL REFERENCES usuario(id) ON DELETE CASCADE, nome TEXT NOT NULL, relacao TEXT NOT NULL, idade INTEGER NOT NULL, documento_final TEXT, acessibilidade TEXT, criado_em INTEGER NOT NULL)")
+            it.execute("create index if not exists idx_passageiro_usuario on passageiro(usuario_id)")
             it.execute("create table if not exists tentativa_login (chave TEXT PRIMARY KEY, falhas INTEGER NOT NULL DEFAULT 0, bloqueado_ate INTEGER)")
         }
+        // Compra: tabelas e cupom inicial. Um script SQL idempotente, usado em banco novo e antigo.
+        val sql = Banco::class.java.getResourceAsStream("/migracao-compra.sql")!!.bufferedReader().readText()
+        sql.lines().map { it.substringBefore("--") }.joinToString("\n").split(";").map { it.trim() }.filter { it.isNotEmpty() }
+            .forEach { cmd -> c.createStatement().use { it.execute(cmd) } }
+        acrescentar("pedido_trecho", "volta", "INTEGER NOT NULL DEFAULT 0 CHECK (volta IN (0,1))")   // B1: ida e volta numa compra só
+        acrescentar("pedido", "remarcada_em", "INTEGER")   // remarcação: uma vez por compra
     }
 
     private fun criarEsquema(c: Connection) {
@@ -130,6 +140,15 @@ object Banco {
         c.createStatement().use { s ->
             s.executeQuery("select t.codigo, ci.nome, ci.uf, t.nome from terminal t join cidade ci on ci.id = t.cidade_id order by ci.nome").use { rs ->
                 buildList { while (rs.next()) add(Terminal(rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4))) }
+            }
+        }
+    }
+
+    /** B4: infraestrutura de cada terminal (dados fictícios). */
+    fun infraDosTerminais(): List<br.com.talisson.entrevias.domain.InfraTerminal> = conexao().use { c ->
+        c.createStatement().use { s ->
+            s.executeQuery("select terminal, banheiro_acessivel, rampa_elevador, lanchonete, guarda_volumes, aberto_24h, caminhada_m from terminal_infra order by terminal").use { rs ->
+                buildList { while (rs.next()) add(br.com.talisson.entrevias.domain.InfraTerminal(rs.getString(1), rs.getInt(2) == 1, rs.getInt(3) == 1, rs.getInt(4) == 1, rs.getInt(5) == 1, rs.getInt(6) == 1, rs.getInt(7))) }
             }
         }
     }

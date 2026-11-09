@@ -65,3 +65,28 @@ If you face any issues, please report them on [YouTrack](https://youtrack.jetbra
 | `CAIXA_DE_SAIDA_DEV=true` | só em desenvolvimento: abre `/api/dev/caixa-de-saida` com os e-mails simulados |
 
 O que é simulado, e como trocar por produção: [docs/SIMULADOS.md](docs/SIMULADOS.md).
+
+### Ferramentas do gestor (no app: Conta → Viagens, ajuda e reclamações; também pela API)
+
+No app, o gestor vê as viagens de um dia, registra atraso, horário ou cancelamento, responde pedidos de ajuda e lê reclamações. Pela API: entre como gestor (`POST /api/login`) e use o token em `Authorization: Bearer <token>`:
+
+| Para quê | Chamada |
+|---|---|
+| Listar as viagens de um dia, com ocorrência e compras pagas | `GET /api/gestor/viagens?data=AAAA-MM-DD` |
+| Registrar atraso, horário alterado ou cancelamento de uma viagem | `POST /api/gestor/viagens/{id}/ocorrencia` com `{"tipo":"atraso","minutos":25}` (`atraso`, `horario` ou `cancelada`) |
+| Ver os pedidos de ajuda | `GET /api/gestor/chamados` |
+| Responder um pedido de ajuda | `POST /api/gestor/chamados/{id}/resposta` com `{"texto":"..."}` |
+| Ver as reclamações | `GET /api/gestor/reclamacoes` |
+
+### Servidor no Docker
+
+O servidor roda em um container (`entrevias-servidor`, porta 8080), e não mais preso a um terminal ou ao IntelliJ.
+
+- **Play no Android Studio** sobe o container antes de instalar o app. Se o Docker estiver desligado, a build avisa e segue.
+- **Na mão:** `./gradlew :server:subirServidor` (compila, sobe e espera responder).
+- **Parar / ver log:** `docker compose stop` · `docker logs -f entrevias-servidor`.
+- `restart: unless-stopped`: se o processo cair, o Docker o sobe de novo; se o Mac reiniciar, volta junto com o Docker Desktop.
+- O banco fica no volume `entrevias-dados`: sobrevive a recriar o container. Para zerar: `docker compose down -v`.
+- Acesso: emulador Android `http://10.0.2.2:8080`, simulador iOS e navegador `http://localhost:8080`, celular na mesma rede `http://<IP do Mac>:8080`.
+- Gestor e caixa de saída de e-mail: crie um arquivo `.env` (fora do git) com `GESTOR_EMAIL`, `GESTOR_SENHA` e, se quiser ler os códigos simulados, `CAIXA_DE_SAIDA_DEV=true`.
+- Não rode `:server:run` ao mesmo tempo: as duas usam a porta 8080.
